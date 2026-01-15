@@ -1,0 +1,8 @@
+.venv
+**/temp
+models/*
+**/__pycache__
+yolo11n.pt
+data/*
+!data/metadata
+!data/videos_descriptions.csv
