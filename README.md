@@ -5,6 +5,7 @@
     - cuda==12.8
 2. pip install requirements.txt
 3. 把下载的模型和视频数据文件放到相应的位置，见下面的目录树：
+   ```
     AnimalsVideosProcess
     ├─.venv/...
     ├─.vscode/...
@@ -24,6 +25,7 @@
     ├─temp/...
     ├─yolo11n.pt
     └─...
+   ```
 
 ## 视频预处理
 1. 将原始视频放置在data/videos目录下
