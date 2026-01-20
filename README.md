@@ -24,9 +24,10 @@
     │  └─clip_trt.pt2
     ├─src/...
     ├─temp/...
-    ├─yolo11n.pt
+    ├─yolo26n.pt
     └─...
     ```
+    # 4. 1月14日前安装的ultralytics需要更新：pip install --upgrade ultralytics
 
 ## 视频预处理
 1. 将原始视频放置在data/videos目录下

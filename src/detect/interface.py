@@ -11,13 +11,13 @@ if __name__ == "__main__":
     from typing import TYPE_CHECKING
     if TYPE_CHECKING:
         from src.models.clip import CLIP
-        from src.models.yolo11n import YOLO11n
+        from src.models.yolo import YOLOImpl
 
 
     class Storage():
         def __init__(self):
             self.clip: CLIP = None  # type: ignore
-            self.yolo: YOLO11n = None  # type: ignore
+            self.yolo: YOLOImpl = None  # type: ignore
 
             self.window: DetectFrame
 
@@ -39,9 +39,12 @@ if __name__ == "__main__":
 
             self.progress_val = 0
             self.status = "preparing"
+            self.auto_labeling = False
     
     class Config():
         def __init__(self):
+            self.version = "v0.0.1"
+            self.model_name = "yolo11n.pt"
             self.frame_size = (640, 360)
 
 
@@ -113,14 +116,15 @@ if __name__ == "__main__":
             super().__init__(parent)
             ar = wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL
             self.sim_th_title = wx.StaticText(self, label="相似度阈值")
-            self.sim_th_input = wx.TextCtrl(self, value="0.85", size=wx.Size(60, -1))
+            self.sim_th_input = wx.TextCtrl(self, value="0.90", size=wx.Size(60, -1))
             self.sim_th_calculate = ButtonWithStatus(self, label="计算采样")
-            self.train_label_button = ButtonWithStatus(self, label="采样标注")
-            self.train_label_progress = wx.StaticText(self, label="0/0", size=wx.Size(60, -1), style=ar)
+            self.sample_label_button = ButtonWithStatus(self, label="采样标注")
+            self.sample_label_progress = wx.StaticText(self, label="0/0", size=wx.Size(60, -1), style=ar)
             self.tid_modifier = Panel(self, vgap=0, hgap=0)
             self.tid_inc = GenButton(self.tid_modifier, label="+", size=wx.Size(33, -1))
             self.tid_dec = GenButton(self.tid_modifier, label="-", size=wx.Size(33, -1))
             self.train_button = ButtonWithStatus(self, label="开始训练")
+            # self.appending_train_button = GenButton(self, label="帧追加训练")
             self.auto_label = GenButton(self, label="自动标注")
             self.save_button = ButtonWithStatus(self, label="保存结果")
 
@@ -129,23 +133,29 @@ if __name__ == "__main__":
             self.add(self.sim_th_title, pos=(0, 0), flag=rc)
             self.add(self.sim_th_input, pos=(0, 1), flag=rc)
             self.add(self.sim_th_calculate, pos=(0, 2), flag=rc)
-            self.add(self.train_label_progress, pos=(1, 1), flag=rc)
-            self.add(self.train_label_button, pos=(1, 2), flag=rc)
+            self.add(self.sample_label_progress, pos=(1, 1), flag=rc)
+            self.add(self.sample_label_button, pos=(1, 2), flag=rc)
             self.add(self.tid_modifier, pos=(1, 4), flag=wx.ALL|wx.EXPAND)
             self.tid_modifier.add(self.tid_inc, pos=(0, 0), flag=lc)
             self.tid_modifier.add(self.tid_dec, pos=(0, 2), flag=rc)
             self.add(self.train_button, pos=(2, 2), flag=rc)
+            # self.add(self.appending_train_button, pos=(2, 4), flag=rc)
             self.add(self.auto_label, pos=(3, 2), flag=rc)
             self.add(self.save_button, pos=(4, 2), flag=rc)
             self.sim_th_calculate.button.Bind(wx.EVT_BUTTON, lambda e: get_clip_features(storage, config))
-            self.train_label_button.button.Bind(wx.EVT_BUTTON, lambda e: start_train_model(storage, config))
+            self.sample_label_button.button.Bind(wx.EVT_BUTTON, lambda e: start_sample_label(storage, config))
             self.tid_inc.Bind(wx.EVT_BUTTON, lambda e: train_idx_inc(storage, config))
             self.tid_dec.Bind(wx.EVT_BUTTON, lambda e: train_idx_dec(storage, config))
-            self.train_button.button.Bind(wx.EVT_BUTTON, lambda e: label_start_train(storage, config))
+            self.train_button.button.Bind(wx.EVT_BUTTON, lambda e: sample_train(storage, config))
+            # self.appending_train_button.Bind(wx.EVT_BUTTON, lambda e: append_train(storage, config))
             self.auto_label.Bind(wx.EVT_BUTTON, lambda e: start_auto_detect(storage, config))
             self.save_button.button.Bind(wx.EVT_BUTTON, lambda e: save_results(storage, config))
             top = self.GetTopLevelParent()
             top.Bind(wx.EVT_CHAR_HOOK, lambda e: global_key_handler(storage, config, e))
+
+            self.timer = wx.Timer(self)
+            self.Bind(wx.EVT_TIMER, lambda e: global_timer_handler(storage, config), self.timer)
+            self.timer.Start(30)
 
 
     class FrameDisplay(Panel):

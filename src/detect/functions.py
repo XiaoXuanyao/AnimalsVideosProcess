@@ -11,11 +11,14 @@ import csv
 import json
 import numpy as np
 from ultralytics.engine.results import Boxes, Results
-from src.models.yolo11n import YOLO11n
+from src.models.yolo import YOLOImpl
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.detect.interface import Storage
+
+
+# =========---  1. Global key event handler   ---========= #
 
 
 def global_key_handler(storage: Storage, config, event):
@@ -29,6 +32,15 @@ def global_key_handler(storage: Storage, config, event):
     auto_label(storage, config, event)
     label_box_speed_reset(storage, config, event)
     label_box_speed_up(storage, config, event)
+    relabel_frame(storage, config, event)
+    load_last_frame_labels(storage, config, event)
+
+def global_timer_handler(storage: Storage, config):
+    if storage.auto_labeling:
+        frame_idx_inc(storage, config)
+
+
+# =========---  2. Global debug output functions   ---========= #
 
 
 def set_progress_val(storage: Storage, value):
@@ -54,6 +66,80 @@ def append_output_text(storage: Storage, text, color=(200, 200, 200), weight=wx.
     storage.window.outputs.output_field.SetStyle(start, end, attr)
     storage.window.outputs.output_field.ShowPosition(end)
     storage.window.Update()
+
+
+# =========---  3. Calculate operations   ---========= #
+
+
+def average(arr: list[Results], weights: list[float] | None=None) -> Boxes:
+    len_arr = [0 if e.boxes is None else len(e.boxes.data) for e in arr]
+    len_map = {}
+    for i, e in enumerate(len_arr):
+        if e not in len_map:
+            len_map[e] = 0
+        len_map[e] += weights[i] if weights is not None else 1
+    std_len = max(len_map.items(), key=lambda x: x[1])[0]
+    use_idx = [i for i, e in enumerate(len_arr) if e == std_len]
+    data = []
+    for e in arr:
+        if e.boxes is None or len(e.boxes.data) != std_len:
+            continue
+        boxes_data = e.boxes.data
+        boxes_data = boxes_data if isinstance(boxes_data, torch.Tensor) else torch.tensor(boxes_data)
+        boxes_data = boxes_data.clone()
+        data.append(boxes_data.cpu().numpy())
+    data = np.array(data)
+    avg_data = np.average(data, axis=0, weights=[weights[i] for i in use_idx] if weights is not None else None)
+    orig_shape = [e.boxes.orig_shape for e in arr if e.boxes is not None and len(e.boxes.data) == std_len][0]
+    boxes = Boxes(torch.tensor(avg_data, dtype=torch.float32), orig_shape)
+    return boxes
+
+def calculate_image_results(model: YOLOImpl, frame, before_results: list[Results] | None=None) -> Results:
+    if before_results is not None and len(before_results) > 0:
+        detects = []
+        for e in before_results:
+            if e is None:
+                break
+            boxes = e.boxes
+            if boxes is None:
+                continue
+            xyxy = boxes.xyxy
+            conf = boxes.conf
+            cls = boxes.cls
+            if isinstance(xyxy, torch.Tensor):
+                xyxy = xyxy.cpu().numpy()
+            if isinstance(conf, torch.Tensor):
+                conf = conf.cpu().numpy()
+            if isinstance(cls, torch.Tensor):
+                cls = cls.cpu().numpy()
+            xyxy = np.array(xyxy)
+            conf = np.array(conf)
+            cls = np.array(cls)
+            conf = conf.reshape(-1, 1)
+            cls = cls.reshape(-1, 1)
+            detects.append(np.concatenate([xyxy, conf, cls], axis=1).astype(np.float32))
+        result: Results = model.track(
+            img=frame,
+            detects=detects
+        )[0]
+    else:
+        result: Results = model.predict(frame)[0]
+    return result
+
+def postprocess_image_results(result: Results, names: list[str]) -> Results:
+    result.names = {i: name for i, name in enumerate(names)}
+    if result.boxes is not None:
+        data = result.boxes.data
+        data = data if isinstance(data, torch.Tensor) else torch.tensor(data)
+        data = data.clone()
+        for i in range(data.shape[0]):
+            data[i][-1] = min(data[i][-1], len(names) - 1)
+        boxes = Boxes(data, result.boxes.orig_shape)
+        result.boxes = boxes
+    return result
+
+
+# =========---  4. Video operations   ---========= #
 
 
 def load_videos(folder, storage: Storage, config):
@@ -122,7 +208,8 @@ def load_frames(storage: Storage, config):
         if not ret:
             break
         storage.frame_list.append(frame)
-        set_progress_val(storage, i / cnt)
+        if i % 10 == 0 or i == cnt:
+            set_progress_val(storage, i / cnt)
     cap.release()
     storage.window.load_video_opts.load_button.set_status("[OK]")
     storage.frame_idx = 0
@@ -154,7 +241,7 @@ def frame_idx_set(storage: Storage, config):
     component.frame_ord.SetLabel(f"{storage.frame_idx}/{len(storage.frame_list)-1}")
     display_frame(storage, config)
     if storage.status == "labeling":
-        auto_label_frames(storage, config)
+        label_frame(storage, config)
 
 
 def display_frame(storage: Storage, config):
@@ -179,11 +266,11 @@ def get_clip_features(storage: Storage, config):
         append_output_text(storage, "CLIP模型加载完成")
     if storage.yolo is None:
         append_output_text(storage, "加载YOLO模型...")
-        if os.path.exists("temp/detect/train_yolo11n/weights/best.pt"):
-            storage.yolo = YOLO11n(weights_path="temp/detect/train_yolo11n/weights/best.pt")
+        if os.path.exists("temp/detect/train_yolo/weights/best.pt"):
+            storage.yolo = YOLOImpl(weights_path="temp/detect/train_yolo/weights/best.pt")
             append_output_text(storage, "已加载自定义训练的YOLO模型")
         else:
-            storage.yolo = YOLO11n(weights_path="models/yolo11n.pt")
+            storage.yolo = YOLOImpl(weights_path="models/" + config.model_name)
             append_output_text(storage, "YOLO模型加载完成")
     storage.window.outputs.progress.SetColor(wx.Colour(50, 150, 150), wx.Colour(50, 90, 90))
     storage.window.outputs.progress.SetValue(0)
@@ -212,13 +299,13 @@ def get_train_set(storage: Storage, config, threshold):
             ilist.append(i)
     storage.train_idx_list = ilist
     storage.window.label_config.sim_th_calculate.set_status("[OK]")
-    storage.window.label_config.train_label_progress.SetLabel(f"0/{len(ilist)}")
+    storage.window.label_config.sample_label_progress.SetLabel(f"0/{len(ilist)}")
     append_output_text(storage, f"相似度阈值：{threshold}，选取 {len(ilist)} 帧作为训练集")
     storage.window.outputs.progress.SetColor(wx.Colour(50, 200, 100), wx.Colour(50, 150, 150))
     storage.window.outputs.progress.SetValue(0)
 
 
-def start_train_model(storage: Storage, config):
+def start_sample_label(storage: Storage, config):
     storage.status = "training"
     storage.train_idx = 0
     train_idx_set(storage, config)
@@ -240,61 +327,39 @@ def train_idx_set(storage: Storage, config):
     idx = storage.train_idx_list[storage.train_idx]
     storage.frame_idx = idx
     storage.window.load_video_opts.fid_input.SetValue(str(storage.frame_idx))
-    storage.window.label_config.train_label_progress.SetLabel(f"{storage.train_idx}/{len(storage.train_idx_list)}")
+    storage.window.label_config.sample_label_progress.SetLabel(f"{storage.train_idx}/{len(storage.train_idx_list)}")
     frame_idx_set(storage, config)
     load_result(storage, config, None)
-    auto_label_frames(storage, config)
+    label_frame(storage, config)
     set_progress_val(storage, len(storage.frame_res_list) / len(storage.train_idx_list))
 
 
-def plot_labeled_frame(storage: Storage, config):
+def plot_labeled_frame(storage: Storage, config, relabel=False):
     frame = storage.frame_list[storage.frame_idx].copy()
     result_buff: Results | None = storage.frame_res_list.get(storage.frame_idx, None)
-    if result_buff is None:
-        if storage.frame_res_list.get(storage.frame_idx, None) is not None:
-            result: Results = storage.frame_res_list[storage.frame_idx]
-        if storage.frame_res_list.get(storage.frame_idx - 1, None) is not None:
-            detects = []
-            for i in range(0, 5):
-                last_frame_idx = storage.frame_idx - i - 1
-                if last_frame_idx < 0 or storage.frame_res_list.get(last_frame_idx, None) is None:
-                    break
-                boxes = storage.frame_res_list[last_frame_idx].boxes
-                if boxes is None:
-                    continue
-                xyxy = boxes.xyxy
-                conf = boxes.conf
-                cls = boxes.cls
-                if isinstance(xyxy, torch.Tensor):
-                    xyxy = xyxy.cpu().numpy()
-                if isinstance(conf, torch.Tensor):
-                    conf = conf.cpu().numpy()
-                if isinstance(cls, torch.Tensor):
-                    cls = cls.cpu().numpy()
-                xyxy = np.array(xyxy)
-                conf = np.array(conf)
-                cls = np.array(cls)
-                conf = conf.reshape(-1, 1)
-                cls = cls.reshape(-1, 1)
-                detects.append(np.concatenate([xyxy, conf, cls], axis=1).astype(np.float32))
-            result: Results = storage.yolo.track(
-                img=frame,
-                detects=detects
-            )[0]
-        else:
-            result: Results = storage.yolo.predict(frame)[0]
-        result.names = {i: name for i, name in enumerate(storage.classes)}
-        if result.boxes is not None:
-            data = result.boxes.data
-            data = data if isinstance(data, torch.Tensor) else torch.tensor(data)
-            data = data.clone()
-            for i in range(data.shape[0]):
-                data[i][-1] = min(data[i][-1], len(storage.classes) - 1)
-            boxes = Boxes(data, result.boxes.orig_shape)
+    if result_buff is None or relabel:
+        result = calculate_image_results(storage.yolo, frame, before_results=[e for e in [
+            storage.frame_res_list.get(storage.frame_idx - i - 1, None) for i in range(0, 10)
+        ] if e is not None])
+        result = postprocess_image_results(result, storage.classes)
+
+        if  storage.frame_idx - 1 >= 0 and storage.frame_idx + 1 < len(storage.frame_list):
+            a_results = []
+            for i in range(-1, 2):
+                frame_i = storage.frame_idx + i
+                res_i = storage.frame_res_list.get(frame_i, None)
+                if res_i is None:
+                    res_i = calculate_image_results(storage.yolo, storage.frame_list[frame_i], before_results=[e for e in [
+                        storage.frame_res_list.get(frame_i - j - 1, None) for j in range(0, 10)
+                    ] if e is not None])
+                    res_i = postprocess_image_results(res_i, storage.classes)
+            boxes = average([result] + a_results, weights=[0.4] + [0.6 / len(a_results) for _ in a_results])
             result.boxes = boxes
-        storage.frame_res_list[storage.frame_idx] = result
     else:
         result = result_buff
+
+    result.names = {i: name for i, name in enumerate(storage.classes)}
+    storage.frame_res_list[storage.frame_idx] = result
     if result.boxes is None:
         return frame
     data = result.boxes.data
@@ -305,6 +370,7 @@ def plot_labeled_frame(storage: Storage, config):
         data0 = data[i].reshape(1, -1)
         boxes = Boxes(data0, result.boxes.orig_shape)
         result.boxes = boxes
+        result.names = {i: name for i, name in enumerate(storage.classes)}
         line_weight = 2
         frame = result.plot(
             img=frame,
@@ -327,8 +393,8 @@ def plot_labeled_frame(storage: Storage, config):
     result.boxes = origin_boxes
     return frame
 
-def auto_label_frames(storage: Storage, config):
-    annotated_frame = plot_labeled_frame(storage, config)
+def label_frame(storage: Storage, config, relabel=False):
+    annotated_frame = plot_labeled_frame(storage, config, relabel=relabel)
     storage.frame_labeled_list[storage.frame_idx] = annotated_frame
     display_frame(storage, config)
 
@@ -341,8 +407,8 @@ def label_box_idx_inc(storage: Storage, config, event):
     box_count = result.boxes.data.shape[0]
     storage.train_box_idx = (storage.train_box_idx + 1) % box_count
     if len(storage.frame_res_list) == len(storage.train_idx_list):
-        storage.window.label_config.train_label_button.set_status("[OK]")
-    auto_label_frames(storage, config)
+        storage.window.label_config.sample_label_button.set_status("[OK]")
+    label_frame(storage, config)
 
 def label_box_move(storage: Storage, config, event):
     direction = (0, 0)
@@ -373,7 +439,7 @@ def label_box_move(storage: Storage, config, event):
     boxes = Boxes(data, result.boxes.orig_shape)
     result.boxes = boxes
     storage.frame_res_list[storage.frame_idx] = result
-    auto_label_frames(storage, config)
+    label_frame(storage, config)
 
 def label_box_resize(storage: Storage, config, event):
     direction = (0, 0)
@@ -402,7 +468,7 @@ def label_box_resize(storage: Storage, config, event):
     boxes = Boxes(data, result.boxes.orig_shape)
     result.boxes = boxes
     storage.frame_res_list[storage.frame_idx] = result
-    auto_label_frames(storage, config)
+    label_frame(storage, config)
 
 def label_box_speed_up(storage: Storage, config, event):
     if event.GetKeyCode() in [
@@ -441,14 +507,17 @@ def label_box_create(storage: Storage, config, event):
     data = data if isinstance(data, torch.Tensor) else torch.tensor(data)
     data = data.clone()
     h, w = result.boxes.orig_shape
-    new_box = torch.tensor([[w//4, h//4, w//4*3, h//4*3, 0.9, 0]], dtype=data.dtype)
+    if data.shape[1] == 6:
+        new_box = torch.tensor([[w//4, h//4, w//2, h//2, 0.9, 0]], dtype=data.dtype)
+    else:
+        new_box = torch.tensor([[w//4, h//4, w//2, h//2, max(data[:, -3]) + 1, 0.9, 0]], dtype=data.dtype)
     data = torch.cat([data, new_box.to(data.device)], dim=0)
     boxes = Boxes(data, result.boxes.orig_shape)
     result.boxes = boxes
     result.names = {i: name for i, name in enumerate(storage.classes)}
     storage.frame_res_list[storage.frame_idx] = result
     storage.train_box_idx = data.shape[0] - 1
-    auto_label_frames(storage, config)
+    label_frame(storage, config)
 
 def label_box_delete(storage: Storage, config, event):
     if event.GetKeyCode() != wx.WXK_DELETE:
@@ -466,7 +535,7 @@ def label_box_delete(storage: Storage, config, event):
     result.boxes = boxes
     storage.frame_res_list[storage.frame_idx] = result
     storage.train_box_idx = max(0, storage.train_box_idx - 1)
-    auto_label_frames(storage, config)
+    label_frame(storage, config)
 
 def label_box_class_next(storage: Storage, config, event):
     if event.GetKeyCode() != ord('T'):
@@ -486,7 +555,7 @@ def label_box_class_next(storage: Storage, config, event):
     result.boxes = boxes
     result.names = {i: name for i, name in enumerate(storage.classes)}
     storage.frame_res_list[storage.frame_idx] = result
-    auto_label_frames(storage, config)
+    label_frame(storage, config)
 
 def save_result(storage: Storage, config, idx):
     p = f"data/detect/temp/{os.path.basename(storage.video_list[storage.video_idx]).replace('.mp4', '')}_frame_{idx:05d}.npy"
@@ -508,8 +577,7 @@ def load_result(storage: Storage, config, event):
     p = f"data/detect/temp/{os.path.basename(storage.video_list[storage.video_idx]).replace('.mp4', '')}_frame_{idx:05d}.npy"
     if not os.path.exists(p):
         return
-    plot_labeled_frame(storage, config)
-    result = storage.frame_res_list.get(idx, None)
+    result = calculate_image_results(storage.yolo, storage.frame_list[idx])
     if result is None or result.boxes is None:
         return
     np_data = np.load(p)
@@ -517,15 +585,17 @@ def load_result(storage: Storage, config, event):
     boxes = Boxes(data, result.boxes.orig_shape)
     result.boxes = boxes
     storage.frame_res_list[idx] = result
-    auto_label_frames(storage, config)
+    label_frame(storage, config)
 
-def label_start_train(storage: Storage, config):
-    storage.window.label_config.train_label_progress.SetLabel(f"{len(storage.train_idx_list)}/{len(storage.train_idx_list)}")
-    storage.window.label_config.train_label_button.set_status("[OK]")
+def sample_train(storage: Storage, config):
+    storage.window.label_config.sample_label_progress.SetLabel(f"{len(storage.train_idx_list)}/{len(storage.train_idx_list)}")
+    storage.window.label_config.sample_label_button.set_status("[OK]")
     append_output_text(storage, "创建训练集目录，路径：temp/dataset")
     p = "temp/dataset"
     if os.path.exists(p):
         shutil.rmtree(p)
+    if os.path.exists("temp/detect/train_yolo"):
+        shutil.rmtree("temp/detect/train_yolo")
     os.makedirs(f"{p}/images/train", exist_ok=True)
     os.makedirs(f"{p}/images/val", exist_ok=True)
     os.makedirs(f"{p}/labels/train", exist_ok=True)
@@ -563,12 +633,59 @@ def label_start_train(storage: Storage, config):
                 f.write(f"{cls} {x_center:.4f} {y_center:.4f} {box_w:.4f} {box_h:.4f}\n")
     
     append_output_text(storage, "训练模型...")
-    model = YOLO11n(weights_path="models/yolo11n.pt")
-    model.train(data=f"{p}/data.yaml", epochs=120, batch=32)
+    model = YOLOImpl(weights_path=f"models/{config.model_name}")
+    model.train(data=f"{p}/data.yaml", epochs=120, batch=32, optimizer="auto", lr=3e-4)
     
     storage.yolo = model
     storage.window.label_config.train_button.set_status("[OK]")
     append_output_text(storage, "训练完成")
+
+def append_train(storage: Storage, config):
+    p = "temp/dataset"
+    if os.path.exists(p):
+        shutil.rmtree(p)
+    os.makedirs(f"{p}/images/train", exist_ok=True)
+    os.makedirs(f"{p}/images/val", exist_ok=True)
+    os.makedirs(f"{p}/labels/train", exist_ok=True)
+    os.makedirs(f"{p}/labels/val", exist_ok=True)
+
+    yaml = {
+        "train": "./",
+        "val": "./",
+        "nc": len(storage.classes),
+        "names": storage.classes
+    }
+    json.dump(yaml, open(f"{p}/data.yaml", 'w'), indent=4)
+
+    append_output_text(storage, "写入标注数据...")
+    for idx in storage.train_idx_list + [storage.frame_idx]:
+        result = storage.frame_res_list.get(idx, None)
+        if result is None:
+            continue
+        img_path = f"{p}/images/train/frame_{idx:05d}.jpg"
+        lab_path = f"{p}/labels/train/frame_{idx:05d}.txt"
+        cv2.imwrite(img_path, storage.frame_list[idx])
+        with open(lab_path, 'w') as f:
+            if result.boxes is None:
+                continue
+            data = result.boxes.data
+            data = data if isinstance(data, torch.Tensor) else torch.tensor(data)
+            data = data.clone()
+            h, w = result.boxes.orig_shape
+            for i in range(data.shape[0]):
+                box = data[i]
+                x_center = (box[0] + box[2]) / 2 / w
+                y_center = (box[1] + box[3]) / 2 / h
+                box_w = (box[2] - box[0]) / w
+                box_h = (box[3] - box[1]) / h
+                cls = int(box[-1])
+                f.write(f"{cls} {x_center:.4f} {y_center:.4f} {box_w:.4f} {box_h:.4f}\n")
+    
+    model = YOLOImpl(weights_path=f"models/{config.model_name}")
+    model.train(data=f"{p}/data.yaml", epochs=3, batch=4, optimizer="Adam", lr=1e-4, pretrained="self")
+    
+    storage.yolo = model
+    append_output_text(storage, "单帧增量训练完成")
 
 
 def start_auto_detect(storage: Storage, config):
@@ -580,7 +697,28 @@ def start_auto_detect(storage: Storage, config):
 def auto_label(storage: Storage, config, event):
     if event.GetKeyCode() != ord('N'):
         return
-    frame_idx_inc(storage, config)
+    if not storage.auto_labeling:
+        storage.auto_labeling = True
+        append_output_text(storage, "自动标注开始，按 N 键停止")
+    else:
+        storage.auto_labeling = False
+        append_output_text(storage, "自动标注结束")
+
+def relabel_frame(storage: Storage, config, event):
+    if event.GetKeyCode() != ord('R') or storage.status != "labeling":
+        return
+    label_frame(storage, config, relabel=True)
+
+def load_last_frame_labels(storage: Storage, config, event):
+    if event.GetKeyCode() != ord('P'):
+        return
+    if storage.status == "labeling":
+        if storage.frame_res_list.get(storage.frame_idx - 1, None) is not None:
+            storage.frame_res_list[storage.frame_idx] = storage.frame_res_list[storage.frame_idx - 1]
+    if storage.status == "training":
+        if storage.frame_res_list.get(storage.train_idx_list[storage.train_idx - 1], None) is not None:
+            storage.frame_res_list[storage.train_idx_list[storage.train_idx]] = storage.frame_res_list[storage.train_idx_list[storage.train_idx - 1]]
+    label_frame(storage, config)
 
 def save_results(storage: Storage, config):
     name = os.path.basename(storage.video_list[storage.video_idx].replace(".mp4", ""))
