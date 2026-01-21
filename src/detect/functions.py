@@ -34,6 +34,7 @@ def global_key_handler(storage: Storage, config, event):
     label_box_speed_up(storage, config, event)
     relabel_frame(storage, config, event)
     load_last_frame_labels(storage, config, event)
+    event.Skip()
 
 def global_timer_handler(storage: Storage, config):
     if storage.auto_labeling:
