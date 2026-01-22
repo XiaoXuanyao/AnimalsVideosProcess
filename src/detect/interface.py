@@ -66,7 +66,7 @@ if __name__ == "__main__":
             self.load_button = ButtonWithStatus(self, label="加载视频")
             # 视频选择
             self.vid_title = wx.StaticText(self, label="视频索引")
-            self.video_name = wx.TextCtrl(self, value="未选择", size=wx.Size(160, -1))
+            self.video_name = wx.TextCtrl(self, value="未选择", size=wx.Size(160, -1), style=wx.TE_READONLY)
             self.vid_input = wx.TextCtrl(self, value="0", size=wx.Size(60, -1))
             self.vid_modifier = Panel(self, vgap=0, hgap=0)
             self.vid_inc = GenButton(self.vid_modifier, label="+", size=wx.Size(33, -1))
