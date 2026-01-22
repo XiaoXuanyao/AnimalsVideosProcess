@@ -22,19 +22,21 @@ if TYPE_CHECKING:
 
 
 def global_key_handler(storage: Storage, config, event):
-    label_box_idx_inc(storage, config, event)
-    label_box_move(storage, config, event)
-    label_box_resize(storage, config, event)
-    label_box_create(storage, config, event)
-    label_box_delete(storage, config, event)
-    label_box_class_next(storage, config, event)
-    load_result(storage, config, event)
-    auto_label(storage, config, event)
-    label_box_speed_reset(storage, config, event)
-    label_box_speed_up(storage, config, event)
-    relabel_frame(storage, config, event)
-    load_last_frame_labels(storage, config, event)
-    event.Skip()
+    rk = False
+    rk |= label_box_idx_inc(storage, config, event)
+    rk |= label_box_move(storage, config, event)
+    rk |= label_box_resize(storage, config, event)
+    rk |= label_box_create(storage, config, event)
+    rk |= label_box_delete(storage, config, event)
+    rk |= label_box_class_next(storage, config, event)
+    rk |= load_result(storage, config, event)
+    rk |= auto_label(storage, config, event)
+    rk |= label_box_speed_reset(storage, config, event)
+    rk |= label_box_speed_up(storage, config, event)
+    rk |= relabel_frame(storage, config, event)
+    rk |= load_last_frame_labels(storage, config, event)
+    if not rk:
+        event.Skip()
 
 def global_timer_handler(storage: Storage, config):
     if storage.auto_labeling:
@@ -401,15 +403,16 @@ def label_frame(storage: Storage, config, relabel=False):
 
 def label_box_idx_inc(storage: Storage, config, event):
     if event.GetKeyCode() != ord('B'):
-        return
+        return False
     result = storage.frame_res_list.get(storage.frame_idx, None)
     if result is None or result.boxes is None:
-        return
+        return False
     box_count = result.boxes.data.shape[0]
     storage.train_box_idx = (storage.train_box_idx + 1) % box_count
     if len(storage.frame_res_list) == len(storage.train_idx_list):
         storage.window.label_config.sample_label_button.set_status("[OK]")
     label_frame(storage, config)
+    return True
 
 def label_box_move(storage: Storage, config, event):
     direction = (0, 0)
@@ -422,10 +425,10 @@ def label_box_move(storage: Storage, config, event):
     elif event.GetKeyCode() == wx.WXK_RIGHT:
         direction = (1, 0)
     else:
-        return
+        return False
     result = storage.frame_res_list.get(storage.frame_idx, None)
     if result is None or result.boxes is None:
-        return
+        return False
     data = result.boxes.data
     data = data if isinstance(data, torch.Tensor) else torch.tensor(data)
     data = data.clone()
@@ -441,7 +444,7 @@ def label_box_move(storage: Storage, config, event):
     result.boxes = boxes
     storage.frame_res_list[storage.frame_idx] = result
     label_frame(storage, config)
-
+    return True
 def label_box_resize(storage: Storage, config, event):
     direction = (0, 0)
     if event.GetKeyCode() == ord('W'):
@@ -453,10 +456,10 @@ def label_box_resize(storage: Storage, config, event):
     elif event.GetKeyCode() == ord('D'):
         direction = (1, 0)
     else:
-        return
+        return False
     result = storage.frame_res_list.get(storage.frame_idx, None)
     if result is None or result.boxes is None:
-        return
+        return False
     data = result.boxes.data
     data = data if isinstance(data, torch.Tensor) else torch.tensor(data)
     data = data.clone()
@@ -470,6 +473,7 @@ def label_box_resize(storage: Storage, config, event):
     result.boxes = boxes
     storage.frame_res_list[storage.frame_idx] = result
     label_frame(storage, config)
+    return True
 
 def label_box_speed_up(storage: Storage, config, event):
     if event.GetKeyCode() in [
@@ -484,6 +488,8 @@ def label_box_speed_up(storage: Storage, config, event):
     ]:
         storage.label_box_speed = storage.label_box_speed * 1.02 + 0.03
         storage.last_speed_up_time = time.time()
+        return True
+    return False
 
 def label_box_speed_reset(storage: Storage, config, event):
     if storage.last_speed_up_time + 0.1 < time.time() and event.GetKeyCode() in [
@@ -497,13 +503,15 @@ def label_box_speed_reset(storage: Storage, config, event):
         wx.WXK_RIGHT
     ]:
         storage.label_box_speed = 1.0
+        return True
+    return False
 
 def label_box_create(storage: Storage, config, event):
     if event.GetKeyCode() != ord('C'):
-        return
+        return False
     result = storage.frame_res_list.get(storage.frame_idx, None)
     if result is None or result.boxes is None:
-        return
+        return False
     data = result.boxes.data
     data = data if isinstance(data, torch.Tensor) else torch.tensor(data)
     data = data.clone()
@@ -519,36 +527,38 @@ def label_box_create(storage: Storage, config, event):
     storage.frame_res_list[storage.frame_idx] = result
     storage.train_box_idx = data.shape[0] - 1
     label_frame(storage, config)
+    return True
 
 def label_box_delete(storage: Storage, config, event):
     if event.GetKeyCode() != wx.WXK_DELETE:
-        return
+        return False
     result = storage.frame_res_list.get(storage.frame_idx, None)
     if result is None or result.boxes is None:
-        return
+        return False
     data = result.boxes.data
     data = data if isinstance(data, torch.Tensor) else torch.tensor(data)
     data = data.clone()
     if data.shape[0] == 0:
-        return
+        return True
     data = torch.cat([data[:storage.train_box_idx], data[storage.train_box_idx+1:]], dim=0)
     boxes = Boxes(data, result.boxes.orig_shape)
     result.boxes = boxes
     storage.frame_res_list[storage.frame_idx] = result
     storage.train_box_idx = max(0, storage.train_box_idx - 1)
     label_frame(storage, config)
+    return True
 
 def label_box_class_next(storage: Storage, config, event):
     if event.GetKeyCode() != ord('T'):
-        return
+        return False
     result = storage.frame_res_list.get(storage.frame_idx, None)
     if result is None or result.boxes is None:
-        return
+        return False
     data = result.boxes.data
     data = data if isinstance(data, torch.Tensor) else torch.tensor(data)
     data = data.clone()
     if data.shape[0] == 0:
-        return
+        return True
     box = data[storage.train_box_idx]
     box[-1] = (box[-1] + 1) % len(storage.classes)
     data[storage.train_box_idx] = box
@@ -557,6 +567,7 @@ def label_box_class_next(storage: Storage, config, event):
     result.names = {i: name for i, name in enumerate(storage.classes)}
     storage.frame_res_list[storage.frame_idx] = result
     label_frame(storage, config)
+    return True
 
 def save_result(storage: Storage, config, idx):
     p = f"data/detect/temp/{os.path.basename(storage.video_list[storage.video_idx]).replace('.mp4', '')}_frame_{idx:05d}.npy"
@@ -573,20 +584,21 @@ def save_result(storage: Storage, config, idx):
 def load_result(storage: Storage, config, event):
     if event is not None:
         if event.GetKeyCode() != ord('L'):
-            return
+            return False
     idx = storage.frame_idx
     p = f"data/detect/temp/{os.path.basename(storage.video_list[storage.video_idx]).replace('.mp4', '')}_frame_{idx:05d}.npy"
     if not os.path.exists(p):
-        return
+        return False
     result = calculate_image_results(storage.yolo, storage.frame_list[idx])
     if result is None or result.boxes is None:
-        return
+        return True
     np_data = np.load(p)
     data = torch.tensor(np_data, dtype=torch.float32)
     boxes = Boxes(data, result.boxes.orig_shape)
     result.boxes = boxes
     storage.frame_res_list[idx] = result
     label_frame(storage, config)
+    return True
 
 def sample_train(storage: Storage, config):
     storage.window.label_config.sample_label_progress.SetLabel(f"{len(storage.train_idx_list)}/{len(storage.train_idx_list)}")
@@ -697,22 +709,24 @@ def start_auto_detect(storage: Storage, config):
 
 def auto_label(storage: Storage, config, event):
     if event.GetKeyCode() != ord('N'):
-        return
+        return False
     if not storage.auto_labeling:
         storage.auto_labeling = True
         append_output_text(storage, "自动标注开始，按 N 键停止")
     else:
         storage.auto_labeling = False
         append_output_text(storage, "自动标注结束")
+    return True
 
 def relabel_frame(storage: Storage, config, event):
     if event.GetKeyCode() != ord('R') or storage.status != "labeling":
-        return
+        return False
     label_frame(storage, config, relabel=True)
+    return True
 
 def load_last_frame_labels(storage: Storage, config, event):
     if event.GetKeyCode() != ord('P'):
-        return
+        return False
     if storage.status == "labeling":
         if storage.frame_res_list.get(storage.frame_idx - 1, None) is not None:
             storage.frame_res_list[storage.frame_idx] = storage.frame_res_list[storage.frame_idx - 1]
@@ -720,6 +734,7 @@ def load_last_frame_labels(storage: Storage, config, event):
         if storage.frame_res_list.get(storage.train_idx_list[storage.train_idx - 1], None) is not None:
             storage.frame_res_list[storage.train_idx_list[storage.train_idx]] = storage.frame_res_list[storage.train_idx_list[storage.train_idx - 1]]
     label_frame(storage, config)
+    return True
 
 def save_results(storage: Storage, config):
     name = os.path.basename(storage.video_list[storage.video_idx].replace(".mp4", ""))
