@@ -10,6 +10,7 @@ import torch
 import csv
 import json
 import numpy as np
+import copy
 from ultralytics.engine.results import Boxes, Results
 from src.models.yolo import YOLOImpl
 from typing import TYPE_CHECKING
@@ -180,6 +181,8 @@ def video_idx_set(storage: Storage, config):
     idx_str = component.vid_input.GetValue()
     if idx_str.isdigit():
         idx = max(0, min(int(idx_str), len(storage.video_list) - 1))
+        if idx == storage.video_idx:
+            return
         storage.video_idx = idx
     component.video_name.SetValue(os.path.basename(storage.video_list[storage.video_idx]) if len(storage.video_list) > 0 else "未选择")
     component.vid_input.SetValue(str(storage.video_idx))
@@ -245,6 +248,7 @@ def frame_idx_set(storage: Storage, config):
     display_frame(storage, config)
     if storage.status == "labeling":
         label_frame(storage, config)
+        set_progress_val(storage, len(storage.frame_res_list) / len(storage.frame_list))
 
 
 def display_frame(storage: Storage, config):
@@ -304,7 +308,7 @@ def get_train_set(storage: Storage, config, threshold):
     storage.window.label_config.sim_th_calculate.set_status("[OK]")
     storage.window.label_config.sample_label_progress.SetLabel(f"0/{len(ilist)}")
     append_output_text(storage, f"相似度阈值：{threshold}，选取 {len(ilist)} 帧作为训练集")
-    storage.window.outputs.progress.SetColor(wx.Colour(50, 200, 100), wx.Colour(50, 150, 150))
+    storage.window.outputs.progress.SetColor(wx.Colour(50, 200, 150), wx.Colour(50, 150, 150))
     storage.window.outputs.progress.SetValue(0)
 
 
@@ -356,7 +360,7 @@ def plot_labeled_frame(storage: Storage, config, relabel=False):
                         storage.frame_res_list.get(frame_i - j - 1, None) for j in range(0, 10)
                     ] if e is not None])
                     res_i = postprocess_image_results(res_i, storage.classes)
-            boxes = average([result] + a_results, weights=[0.4] + [0.6 / len(a_results) for _ in a_results])
+            boxes = average([result] + a_results, weights=[0.3, 0.4, 0.3])
             result.boxes = boxes
     else:
         result = result_buff
@@ -439,6 +443,7 @@ def label_box_move(storage: Storage, config, event):
     box[1] += direction[1] * delta
     box[2] += direction[0] * delta
     box[3] += direction[1] * delta
+    box[-2] = 0.95
     data[storage.train_box_idx] = box
     boxes = Boxes(data, result.boxes.orig_shape)
     result.boxes = boxes
@@ -468,6 +473,7 @@ def label_box_resize(storage: Storage, config, event):
     box = data[storage.train_box_idx]
     box[2] += direction[0] * delta
     box[3] += direction[1] * delta
+    box[-2] = 0.95
     data[storage.train_box_idx] = box
     boxes = Boxes(data, result.boxes.orig_shape)
     result.boxes = boxes
@@ -517,9 +523,9 @@ def label_box_create(storage: Storage, config, event):
     data = data.clone()
     h, w = result.boxes.orig_shape
     if data.shape[1] == 6:
-        new_box = torch.tensor([[w//4, h//4, w//2, h//2, 0.9, 0]], dtype=data.dtype)
+        new_box = torch.tensor([[w//4, h//4, w//2, h//2, 0.95, 0]], dtype=data.dtype)
     else:
-        new_box = torch.tensor([[w//4, h//4, w//2, h//2, max(data[:, -3]) + 1, 0.9, 0]], dtype=data.dtype)
+        new_box = torch.tensor([[w//4, h//4, w//2, h//2, max(data[:, -3]) + 1, 0.95, 0]], dtype=data.dtype)
     data = torch.cat([data, new_box.to(data.device)], dim=0)
     boxes = Boxes(data, result.boxes.orig_shape)
     result.boxes = boxes
@@ -647,7 +653,7 @@ def sample_train(storage: Storage, config):
     
     append_output_text(storage, "训练模型...")
     model = YOLOImpl(weights_path=f"models/{config.model_name}")
-    model.train(data=f"{p}/data.yaml", epochs=120, batch=32, optimizer="auto", lr=3e-4)
+    model.train(data=f"{p}/data.yaml", epochs=120, batch=32, optimizer="auto", lr=3e-4, default_pretrained=f"models/{config.model_name}")
     
     storage.yolo = model
     storage.window.label_config.train_button.set_status("[OK]")
@@ -695,7 +701,7 @@ def append_train(storage: Storage, config):
                 f.write(f"{cls} {x_center:.4f} {y_center:.4f} {box_w:.4f} {box_h:.4f}\n")
     
     model = YOLOImpl(weights_path=f"models/{config.model_name}")
-    model.train(data=f"{p}/data.yaml", epochs=3, batch=4, optimizer="Adam", lr=1e-4, pretrained="self")
+    model.train(data=f"{p}/data.yaml", epochs=3, batch=4, optimizer="Adam", lr=1e-4, pretrained="self", default_pretrained=f"models/{config.model_name}")
     
     storage.yolo = model
     append_output_text(storage, "单帧增量训练完成")
@@ -705,6 +711,7 @@ def start_auto_detect(storage: Storage, config):
     storage.status = "labeling"
     storage.frame_idx = 0
     storage.window.load_video_opts.fid_input.SetValue(str(storage.frame_idx))
+    storage.window.outputs.progress.SetColor(wx.Colour(50, 150, 200), wx.Colour(50, 200, 150))
     frame_idx_set(storage, config)
 
 def auto_label(storage: Storage, config, event):
@@ -727,12 +734,28 @@ def relabel_frame(storage: Storage, config, event):
 def load_last_frame_labels(storage: Storage, config, event):
     if event.GetKeyCode() != ord('P'):
         return False
+    result: Results | None = None
     if storage.status == "labeling":
         if storage.frame_res_list.get(storage.frame_idx - 1, None) is not None:
-            storage.frame_res_list[storage.frame_idx] = storage.frame_res_list[storage.frame_idx - 1]
+            result = storage.frame_res_list[storage.frame_idx - 1]
     if storage.status == "training":
         if storage.frame_res_list.get(storage.train_idx_list[storage.train_idx - 1], None) is not None:
-            storage.frame_res_list[storage.train_idx_list[storage.train_idx]] = storage.frame_res_list[storage.train_idx_list[storage.train_idx - 1]]
+            result = storage.frame_res_list[storage.train_idx_list[storage.train_idx - 1]]
+    
+    if result is None:
+        return True
+    result = copy.deepcopy(result)
+    if result.boxes is not None:
+        data = result.boxes.data
+        data = data if isinstance(data, torch.Tensor) else torch.tensor(data)
+        data = data.clone()
+        boxes = Boxes(data, result.boxes.orig_shape)
+        result.boxes = boxes
+    
+    if storage.status == "labeling":
+        storage.frame_res_list[storage.frame_idx] = result
+    if storage.status == "training":
+        storage.frame_res_list[storage.train_idx_list[storage.train_idx]] = result
     label_frame(storage, config)
     return True
 

@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import os
+import yaml
 from ultralytics import YOLO  # type: ignore
 from pathlib import Path
 
@@ -19,7 +20,16 @@ class YOLOImpl():
                 param.requires_grad = False
 
 
-    def train(self, data, epochs, batch=8, optimizer="Adam", lr=3e-4, pretrained=None):
+    def train(
+        self,
+        data,
+        epochs,
+        batch=8,
+        optimizer="Adam",
+        lr=3e-4,
+        pretrained=None,
+        default_pretrained="./models/yolo11n.pt"
+    ):
         if pretrained == "self":
             self.model.save(Path("./temp/detect/train_yolo/weights/best.pt").absolute())
             pretrained = "./temp/detect/train_yolo/weights/best.pt"
@@ -27,23 +37,32 @@ class YOLOImpl():
             pretrained = "./models/yolo11n.pt"
 
         self.model.train(
+            augment=True,
             batch=batch,
             cache=False,
             compile=False,
+            cutmix=0.2,
             data=data,
             device="0",
+            dropout=0.1,
             epochs=epochs,
             exist_ok=True,
+            freeze=10,
+            hsv_s=0.5,
+            hsv_v=0.3,
             lr0=lr,
+            mixup=0.2,
             name="train_yolo",
             optimizer=optimizer,
+            perspective=0.0002,
             pretrained=None if pretrained is None else Path(pretrained).absolute(),
             project=Path("./temp/detect").absolute(),
+            scale=0.7,
             workers=0,
-            freeze=10,
-            cls=3.5,
-            nbs=32,
-            dropout=0.1
+
+            box=7.5,
+            cls=3.0,
+            dfl=1.5
         )
         self.model = YOLO(Path("./temp/detect/train_yolo/weights/best.pt").absolute())
     
@@ -52,8 +71,8 @@ class YOLOImpl():
         results = self.model(
             img,
             imgsz=640,
-            conf=0.2,
-            iou=0.6,
+            conf=0.18,
+            iou=0.5,
             half=True,
             device="0"
         )
@@ -122,15 +141,26 @@ class YOLOImpl():
                     det_obj = _DetObj(arr=e)
                     tracker.update(det_obj, None, None)
 
+        config = {
+            "tracker_type": "bytetrack",
+            "track_high_thresh": 0.25,
+            "track_low_thresh": 0.1,
+            "new_track_thresh": 0.25,
+            "track_buffer": 10,
+            "match_thresh": 0.65,
+            "fuse_score": True,
+        }
+        os.makedirs("./temp/track", exist_ok=True)
+        yaml.dump(config, open("./temp/track/bytetrack.yaml", "w", encoding="utf-8"), indent=4)
         results = self.model.track(
             img,
-            conf=0.2,
-            iou=0.6,
+            conf=0.18,
+            iou=0.5,
             rect=True,
             half=True,
-            persist=True,
-            tracker="botsort.yaml",
+            persist=False,
+            tracker=Path("./temp/track/bytetrack.yaml").absolute(),
             device="0",
-            augment=True
+            augment=True,
         )
         return results

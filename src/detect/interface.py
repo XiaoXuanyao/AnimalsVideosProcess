@@ -23,7 +23,7 @@ if __name__ == "__main__":
 
             self.metadata: dict[str, dict] = {}
             self.video_list: list[str] = []
-            self.video_idx = 0
+            self.video_idx = -1
             self.frame_list = []
             self.frame_emb_list = []
             self.frame_idx = 0
@@ -116,7 +116,7 @@ if __name__ == "__main__":
             super().__init__(parent)
             ar = wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL
             self.sim_th_title = wx.StaticText(self, label="相似度阈值")
-            self.sim_th_input = wx.TextCtrl(self, value="0.90", size=wx.Size(60, -1))
+            self.sim_th_input = wx.TextCtrl(self, value="0.92", size=wx.Size(60, -1))
             self.sim_th_calculate = ButtonWithStatus(self, label="计算采样")
             self.sample_label_button = ButtonWithStatus(self, label="采样标注")
             self.sample_label_progress = wx.StaticText(self, label="0/0", size=wx.Size(60, -1), style=ar)
