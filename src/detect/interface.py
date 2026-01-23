@@ -53,9 +53,10 @@ if __name__ == "__main__":
         全局配置类，存储程序运行时的各种配置参数
         """
         def __init__(self):
-            self.version = "v0.0.1"
-            self.model_name = "yolo11n.pt"
-            self.frame_size = (640, 360)
+            self.version = "v0.0.1"             # 程序版本
+            self.model_name = "yolo11n.pt"      # 默认yolo模型
+            self.frame_size = (640, 360)        # 默认显示帧大小
+            self.frames_per_label = 2           # 标注时每隔多少帧采样一帧
 
 
     #

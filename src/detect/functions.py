@@ -307,7 +307,8 @@ def load_frames(storage: Storage, config):
         ret, frame = cap.read()
         if not ret:
             break
-        storage.frame_list.append(frame)
+        if i % config.frames_per_label == 0:   # 每隔几帧采样一帧用于标注
+            storage.frame_list.append(frame)
         if i % 10 == 0 or i == cnt:
             set_progress_val(storage, i / cnt)
     cap.release()
