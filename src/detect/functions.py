@@ -1098,7 +1098,7 @@ def save_results(storage: Storage, config):
                 "cls": result.boxes.cls.tolist(),
                 "names": [result.names[int(c)] for c in result.boxes.cls],
             }
-            final_output[f"frame_{i:05d}"] = labels
+            final_output[f"frame_{(i * config.frames_per_label):05d}"] = labels
         json.dump(final_output, f, indent=4)
     append_output_text(storage, f"已保存检测结果至 data/detect/labels/{name}.json")
 
