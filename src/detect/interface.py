@@ -25,6 +25,7 @@ if __name__ == "__main__":
 
             self.window: DetectFrame
 
+            # 视频与帧数据
             self.metadata: dict[str, dict] = {}
             self.video_list: list[str] = []
             self.video_idx = -1
@@ -34,6 +35,7 @@ if __name__ == "__main__":
             self.frame_labeled_list = {}
             self.frame_res_list: dict[int, Results] = {}
 
+            # 训练样本数据
             self.train_idx_list: list[int] = []
             self.train_idx = 0
             self.train_box_idx = 0
@@ -41,6 +43,7 @@ if __name__ == "__main__":
             self.label_box_speed = 1.0
             self.last_speed_up_time = 0.0
 
+            # 状态变量
             self.progress_val = 0
             self.status = "preparing"
             self.auto_labeling = False

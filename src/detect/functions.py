@@ -48,6 +48,7 @@ def global_key_handler(storage: Storage, config, event):
     if not rk:
         event.Skip()
 
+
 def global_timer_handler(storage: Storage, config):
     """
     全局定时器事件处理函数：每隔30ms执行一次，处理定时器事件，将所有需要定时触发的函数在此调用。
@@ -76,6 +77,7 @@ def set_progress_val(storage: Storage, value):
         return
     storage.window.outputs.progress.SetValue(int(value * 1000))
     storage.window.Update()
+
 
 def append_output_text(storage: Storage, text, color=(200, 200, 200), weight=wx.FONTWEIGHT_NORMAL):
     """
@@ -137,6 +139,7 @@ def average(arr: list[Results], weights: list[float] | None=None) -> Boxes:
     boxes = Boxes(torch.tensor(avg_data, dtype=torch.float32), orig_shape)
     return boxes
 
+
 def calculate_image_results(model: YOLOImpl, frame, before_results: list[Results] | None=None) -> Results:
     """
     计算单张图像的检测框，支持传入前几帧的检测结果以进行跟踪，返回检测结果。
@@ -175,6 +178,7 @@ def calculate_image_results(model: YOLOImpl, frame, before_results: list[Results
     else:
         result: Results = model.predict(frame)[0]
     return result
+
 
 def postprocess_image_results(result: Results, names: list[str]) -> Results:
     """
@@ -224,6 +228,7 @@ def load_videos(folder, storage: Storage, config):
     append_output_text(storage, f"已加载 {len(vlist)} 个视频文件")
     video_idx_set(storage, config)
 
+
 def video_idx_inc(storage: Storage, config):
     """
     标注下一个视频
@@ -237,6 +242,7 @@ def video_idx_inc(storage: Storage, config):
         component.vid_input.SetValue(str(storage.video_idx))
         video_idx_set(storage, config)
 
+
 def video_idx_dec(storage: Storage, config):
     """
     标注上一个视频
@@ -249,6 +255,7 @@ def video_idx_dec(storage: Storage, config):
         storage.video_idx -= 1
         component.vid_input.SetValue(str(storage.video_idx))
         video_idx_set(storage, config)
+
 
 def video_idx_set(storage: Storage, config):
     """
@@ -283,6 +290,7 @@ def video_idx_set(storage: Storage, config):
         load_frames(storage, config)
 
 
+
 def load_frames(storage: Storage, config):
     """
     加载当前视频的所有帧，并更新进度条。
@@ -309,6 +317,7 @@ def load_frames(storage: Storage, config):
     append_output_text(storage, f"已加载视频{os.path.basename(storage.video_list[storage.video_idx])}，共 {len(storage.frame_list)} 帧")
     frame_idx_set(storage, config)
 
+
 def frame_idx_inc(storage: Storage, config):
     """
     标注下一帧
@@ -322,6 +331,7 @@ def frame_idx_inc(storage: Storage, config):
         component.fid_input.SetValue(str(storage.frame_idx))
         frame_idx_set(storage, config)
 
+
 def frame_idx_dec(storage: Storage, config):
     """
     标注上一帧
@@ -334,6 +344,7 @@ def frame_idx_dec(storage: Storage, config):
         storage.frame_idx -= 1
         component.fid_input.SetValue(str(storage.frame_idx))
         frame_idx_set(storage, config)
+
 
 def frame_idx_set(storage: Storage, config):
     """
@@ -355,6 +366,7 @@ def frame_idx_set(storage: Storage, config):
         set_progress_val(storage, len(storage.frame_res_list) / len(storage.frame_list))
 
 
+
 def display_frame(storage: Storage, config):
     """
     在界面上显示当前标注帧。
@@ -374,6 +386,7 @@ def display_frame(storage: Storage, config):
         storage.window.frame_display.Thaw()
         if storage.frame_res_list.get(storage.frame_idx, None) is not None:
             storage.window.Update()
+
 
 
 def get_clip_features(storage: Storage, config):
@@ -410,6 +423,7 @@ def get_clip_features(storage: Storage, config):
     threshold = float(storage.window.label_config.sim_th_input.GetValue())
     get_train_set(storage, config, threshold=threshold)
 
+
 def get_train_set(storage: Storage, config, threshold):
     """
     根据相似度阈值选取训练集。
@@ -437,6 +451,7 @@ def get_train_set(storage: Storage, config, threshold):
     storage.window.outputs.progress.SetValue(0)
 
 
+
 def start_sample_label(storage: Storage, config):
     """
     开始样本标注模式
@@ -447,6 +462,7 @@ def start_sample_label(storage: Storage, config):
     storage.status = "training"
     storage.train_idx = 0
     train_idx_set(storage, config)
+
 
 def train_idx_dec(storage: Storage, config):
     """
@@ -460,6 +476,7 @@ def train_idx_dec(storage: Storage, config):
         storage.train_idx = 0
     train_idx_set(storage, config)
 
+
 def train_idx_inc(storage: Storage, config):
     """
     标注下一个训练集帧
@@ -471,6 +488,7 @@ def train_idx_inc(storage: Storage, config):
     if storage.train_idx >= len(storage.train_idx_list):
         storage.train_idx = len(storage.train_idx_list) - 1
     train_idx_set(storage, config)
+
 
 def train_idx_set(storage: Storage, config):
     """
@@ -488,6 +506,7 @@ def train_idx_set(storage: Storage, config):
     load_result(storage, config, None)
     label_frame(storage, config)
     set_progress_val(storage, len(storage.frame_res_list) / len(storage.train_idx_list))
+
 
 
 def plot_labeled_frame(storage: Storage, config, relabel=False):
@@ -558,6 +577,7 @@ def plot_labeled_frame(storage: Storage, config, relabel=False):
     result.boxes = origin_boxes
     return frame
 
+
 def label_frame(storage: Storage, config, relabel=False):
     """
     对当前帧执行标注并显示
@@ -569,6 +589,7 @@ def label_frame(storage: Storage, config, relabel=False):
     annotated_frame = plot_labeled_frame(storage, config, relabel=relabel)
     storage.frame_labeled_list[storage.frame_idx] = annotated_frame
     display_frame(storage, config)
+
 
 def label_box_idx_inc(storage: Storage, config, event):
     """
@@ -589,6 +610,7 @@ def label_box_idx_inc(storage: Storage, config, event):
         storage.window.label_config.sample_label_button.set_status("[OK]")
     label_frame(storage, config)
     return True
+
 
 def label_box_move(storage: Storage, config, event):
     """
@@ -630,6 +652,7 @@ def label_box_move(storage: Storage, config, event):
     label_frame(storage, config)
     return True
 
+
 def label_box_resize(storage: Storage, config, event):
     """
     调整当前选中的检测框大小
@@ -668,6 +691,7 @@ def label_box_resize(storage: Storage, config, event):
     label_frame(storage, config)
     return True
 
+
 def label_box_speed_up(storage: Storage, config, event):
     """
     在持续按键过程中，提高检测框移动和调整的速度
@@ -691,6 +715,7 @@ def label_box_speed_up(storage: Storage, config, event):
         return True
     return False
 
+
 def label_box_speed_reset(storage: Storage, config, event):
     """
     重置检测框移动和调整的速度
@@ -712,6 +737,7 @@ def label_box_speed_reset(storage: Storage, config, event):
         storage.label_box_speed = 1.0
         return True
     return False
+
 
 def label_box_create(storage: Storage, config, event):
     """
@@ -743,6 +769,7 @@ def label_box_create(storage: Storage, config, event):
     label_frame(storage, config)
     return True
 
+
 def label_box_delete(storage: Storage, config, event):
     """
     删除当前选中的检测框
@@ -768,6 +795,7 @@ def label_box_delete(storage: Storage, config, event):
     storage.train_box_idx = max(0, storage.train_box_idx - 1)
     label_frame(storage, config)
     return True
+
 
 def label_box_class_next(storage: Storage, config, event):
     """
@@ -797,6 +825,7 @@ def label_box_class_next(storage: Storage, config, event):
     label_frame(storage, config)
     return True
 
+
 def save_result(storage: Storage, config, idx):
     """
     保存当前帧的标注结果到临时文件夹
@@ -816,6 +845,7 @@ def save_result(storage: Storage, config, idx):
     data = data.clone()
     np_data = data.cpu().numpy()
     np.save(p, np_data)
+
 
 def load_result(storage: Storage, config, event):
 
@@ -844,6 +874,7 @@ def load_result(storage: Storage, config, event):
     storage.frame_res_list[idx] = result
     label_frame(storage, config)
     return True
+
 
 def sample_train(storage: Storage, config):
     """
@@ -904,6 +935,7 @@ def sample_train(storage: Storage, config):
     storage.window.label_config.train_button.set_status("[OK]")
     append_output_text(storage, "训练完成")
 
+
 def append_train(storage: Storage, config):
     """
     使用当前帧增量训练YOLO模型
@@ -959,6 +991,7 @@ def append_train(storage: Storage, config):
     append_output_text(storage, "单帧增量训练完成")
 
 
+
 def start_auto_detect(storage: Storage, config):
     """
     开始自动标注模式
@@ -971,6 +1004,7 @@ def start_auto_detect(storage: Storage, config):
     storage.window.load_video_opts.fid_input.SetValue(str(storage.frame_idx))
     storage.window.outputs.progress.SetColor(wx.Colour(50, 150, 200), wx.Colour(50, 200, 150))
     frame_idx_set(storage, config)
+
 
 def auto_label(storage: Storage, config, event):
     """
@@ -989,6 +1023,7 @@ def auto_label(storage: Storage, config, event):
         append_output_text(storage, "自动标注结束")
     return True
 
+
 def relabel_frame(storage: Storage, config, event):
     """
     重新使用模型自动标注当前帧
@@ -1001,6 +1036,7 @@ def relabel_frame(storage: Storage, config, event):
         return False
     label_frame(storage, config, relabel=True)
     return True
+
 
 def load_last_frame_labels(storage: Storage, config, event):
     """
@@ -1020,6 +1056,7 @@ def load_last_frame_labels(storage: Storage, config, event):
         if storage.frame_res_list.get(storage.train_idx_list[storage.train_idx - 1], None) is not None:
             result = storage.frame_res_list[storage.train_idx_list[storage.train_idx - 1]]
     
+    # 复制结果，使用深拷贝避免引用问题
     if result is None:
         return True
     result = copy.deepcopy(result)
@@ -1036,6 +1073,7 @@ def load_last_frame_labels(storage: Storage, config, event):
         storage.frame_res_list[storage.train_idx_list[storage.train_idx]] = result
     label_frame(storage, config)
     return True
+
 
 def save_results(storage: Storage, config):
     """

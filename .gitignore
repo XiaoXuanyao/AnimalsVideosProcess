@@ -4,5 +4,6 @@ models/*
 **/__pycache__
 yolo11n.pt
 data/*
+src/test.py
 !data/metadata
 !data/videos_descriptions.csv
