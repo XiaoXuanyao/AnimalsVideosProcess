@@ -15,6 +15,10 @@ if __name__ == "__main__":
 
 
     class Storage():
+        """
+        全局存储类，存储程序运行时的各种状态和数据
+        // 变量类型注释使用了`from __future__ import annotations`以避免循环
+        """
         def __init__(self):
             self.clip: CLIP = None  # type: ignore
             self.yolo: YOLOImpl = None  # type: ignore
@@ -42,10 +46,18 @@ if __name__ == "__main__":
             self.auto_labeling = False
     
     class Config():
+        """
+        全局配置类，存储程序运行时的各种配置参数
+        """
         def __init__(self):
             self.version = "v0.0.1"
             self.model_name = "yolo11n.pt"
             self.frame_size = (640, 360)
+
+
+    #
+    # =========---  Main GUI Frame   ---========= #
+    #
 
 
     app = wx.App(False)
@@ -54,6 +66,9 @@ if __name__ == "__main__":
 
 
     class LoadVideoOpts(Panel):
+        """
+        视频加载与选择面板
+        """
         def __init__(self, parent):
             super().__init__(parent)
             ar = wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL
@@ -112,6 +127,9 @@ if __name__ == "__main__":
             
 
     class LabelConfig(Panel):
+        """
+        标注配置面板
+        """
         def __init__(self, parent):
             super().__init__(parent)
             ar = wx.ALIGN_RIGHT | wx.ALIGN_CENTER_VERTICAL
@@ -159,6 +177,9 @@ if __name__ == "__main__":
 
 
     class FrameDisplay(Panel):
+        """
+        视频帧显示面板
+        """
         def __init__(self, parent):
             super().__init__(parent)
             self.frame = wx.StaticBitmap(self, bitmap=wx.BitmapBundle(wx.Bitmap(config.frame_size[0], config.frame_size[1])))
@@ -168,6 +189,10 @@ if __name__ == "__main__":
     
 
     class Outputs(Panel):
+        """
+        输出信息面板
+        // 包括全局进度条和文本输出
+        """
         def __init__(self, parent):
             super().__init__(parent)
             self.progress = ProgressBar(self)
@@ -180,6 +205,9 @@ if __name__ == "__main__":
 
     
     class DetectFrame(MainFrame):
+        """
+        检测任务主程序窗口
+        """
         def __init__(self, title, size):
             super().__init__(title, size)
             self.load_video_opts = LoadVideoOpts(self.frame_panel)

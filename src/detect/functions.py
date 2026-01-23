@@ -19,10 +19,19 @@ if TYPE_CHECKING:
     from src.detect.interface import Storage
 
 
+#
 # =========---  1. Global key event handler   ---========= #
+#
 
 
 def global_key_handler(storage: Storage, config, event):
+    """
+    全局按键事件处理函数：处理按键，并过滤文本框输入，将所有需要按键触发的函数在此调用。
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    :param event: wxPython的按键事件对象
+    """
     rk = False
     rk |= label_box_idx_inc(storage, config, event)
     rk |= label_box_move(storage, config, event)
@@ -40,14 +49,28 @@ def global_key_handler(storage: Storage, config, event):
         event.Skip()
 
 def global_timer_handler(storage: Storage, config):
+    """
+    全局定时器事件处理函数：每隔30ms执行一次，处理定时器事件，将所有需要定时触发的函数在此调用。
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    """
     if storage.auto_labeling:
         frame_idx_inc(storage, config)
 
 
+#
 # =========---  2. Global debug output functions   ---========= #
+#
 
 
 def set_progress_val(storage: Storage, value):
+    """
+    设置全局进度条的百分比
+    
+    :param storage: 传入interface.py的Storage实例
+    :param value: 进度条的值，范围为0到1；0表示0%，1表示100%
+    """
     storage.progress_val = value
     if storage.window.outputs.progress.GetValue() == int(value * 1000):
         return
@@ -55,6 +78,14 @@ def set_progress_val(storage: Storage, value):
     storage.window.Update()
 
 def append_output_text(storage: Storage, text, color=(200, 200, 200), weight=wx.FONTWEIGHT_NORMAL):
+    """
+    在全局输出文本框中追加一行文本，并设置文本颜色和粗细。
+    
+    :param storage: 传入interface.py的Storage实例
+    :param text: 要追加的文本内容
+    :param color: 文本颜色，默认为偏白灰色(200, 200, 200)
+    :param weight: 文本粗细，默认为wx.FONTWEIGHT_NORMAL
+    """
     start = storage.window.outputs.output_field.GetLastPosition()
     if storage.window.outputs.output_field.GetLastPosition() > 0:
         storage.window.outputs.output_field.AppendText("\n")
@@ -72,10 +103,18 @@ def append_output_text(storage: Storage, text, color=(200, 200, 200), weight=wx.
     storage.window.Update()
 
 
+#
 # =========---  3. Calculate operations   ---========= #
+#
 
 
 def average(arr: list[Results], weights: list[float] | None=None) -> Boxes:
+    """
+    对多个Results对象的Boxes进行加权平均，返回一个新的Boxes对象。
+    
+    :param arr: 传入的Results对象列表
+    :param weights: 权重列表，传入float数组可以计算加权平均值，默认为None，表示取平均值
+    """
     len_arr = [0 if e.boxes is None else len(e.boxes.data) for e in arr]
     len_map = {}
     for i, e in enumerate(len_arr):
@@ -99,6 +138,13 @@ def average(arr: list[Results], weights: list[float] | None=None) -> Boxes:
     return boxes
 
 def calculate_image_results(model: YOLOImpl, frame, before_results: list[Results] | None=None) -> Results:
+    """
+    计算单张图像的检测框，支持传入前几帧的检测结果以进行跟踪，返回检测结果。
+    
+    :param model: YOLOImpl模型实例，用于计算检测框
+    :param frame: 输入的图像帧
+    :param before_results: 前几帧的检测结果列表，用于跟踪，默认为None
+    """
     if before_results is not None and len(before_results) > 0:
         detects = []
         for e in before_results:
@@ -131,6 +177,13 @@ def calculate_image_results(model: YOLOImpl, frame, before_results: list[Results
     return result
 
 def postprocess_image_results(result: Results, names: list[str]) -> Results:
+    """
+    对单张图像的检测结果进行后处理，主要是设置类别名称，并确保类别索引在范围内。
+    
+    :param result: 单张图像的检测结果Results对象
+    :param names: 类别名称列表
+    :return: 处理后的检测结果Results对象
+    """
     result.names = {i: name for i, name in enumerate(names)}
     if result.boxes is not None:
         data = result.boxes.data
@@ -143,10 +196,19 @@ def postprocess_image_results(result: Results, names: list[str]) -> Results:
     return result
 
 
+#
 # =========---  4. Video operations   ---========= #
+#
 
 
 def load_videos(folder, storage: Storage, config):
+    """
+    加载指定文件夹中的视频文件，更新Storage中的视频列表和元数据。
+    
+    :param folder: 视频文件夹路径
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    """
     component = storage.window.load_video_opts
     vlist = []
     for e in os.listdir(folder):
@@ -163,6 +225,12 @@ def load_videos(folder, storage: Storage, config):
     video_idx_set(storage, config)
 
 def video_idx_inc(storage: Storage, config):
+    """
+    标注下一个视频
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    """
     component = storage.window.load_video_opts
     if storage.video_idx < len(storage.video_list) - 1:
         storage.video_idx += 1
@@ -170,6 +238,12 @@ def video_idx_inc(storage: Storage, config):
         video_idx_set(storage, config)
 
 def video_idx_dec(storage: Storage, config):
+    """
+    标注上一个视频
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    """
     component = storage.window.load_video_opts
     if storage.video_idx > 0:
         storage.video_idx -= 1
@@ -177,6 +251,12 @@ def video_idx_dec(storage: Storage, config):
         video_idx_set(storage, config)
 
 def video_idx_set(storage: Storage, config):
+    """
+    读取要标注的视频索引（索引同视频名称），并加载对应视频的帧列表和元数据。
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    """
     component = storage.window.load_video_opts
     idx_str = component.vid_input.GetValue()
     if idx_str.isdigit():
@@ -186,7 +266,7 @@ def video_idx_set(storage: Storage, config):
         storage.video_idx = idx
     component.video_name.SetValue(os.path.basename(storage.video_list[storage.video_idx]) if len(storage.video_list) > 0 else "未选择")
     component.vid_input.SetValue(str(storage.video_idx))
-    if len(storage.video_list) > 0:
+    if len(storage.video_list) > 0:  # 加载视频元数据并初始化标注数据
         video_name = os.path.basename(storage.video_list[storage.video_idx])
         classes = storage.metadata.get(video_name, {}).get("title", "")
         classes = classes.split(" ")[1].split("/")
@@ -204,6 +284,12 @@ def video_idx_set(storage: Storage, config):
 
 
 def load_frames(storage: Storage, config):
+    """
+    加载当前视频的所有帧，并更新进度条。
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    """
     component = storage.window.load_video_opts
     set_progress_val(storage, 0)
     storage.window.outputs.progress.SetColor(wx.Colour(50, 90, 90), wx.Colour(50, 50, 50))
@@ -224,6 +310,12 @@ def load_frames(storage: Storage, config):
     frame_idx_set(storage, config)
 
 def frame_idx_inc(storage: Storage, config):
+    """
+    标注下一帧
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    """
     component = storage.window.load_video_opts
     if storage.frame_idx < len(storage.frame_list) - 1:
         storage.frame_idx += 1
@@ -231,6 +323,12 @@ def frame_idx_inc(storage: Storage, config):
         frame_idx_set(storage, config)
 
 def frame_idx_dec(storage: Storage, config):
+    """
+    标注上一帧
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    """
     component = storage.window.load_video_opts
     if storage.frame_idx > 0:
         storage.frame_idx -= 1
@@ -238,6 +336,12 @@ def frame_idx_dec(storage: Storage, config):
         frame_idx_set(storage, config)
 
 def frame_idx_set(storage: Storage, config):
+    """
+    设置当前标注帧的索引
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    """
     component = storage.window.load_video_opts
     idx_str = component.fid_input.GetValue()
     if idx_str.isdigit():
@@ -252,6 +356,13 @@ def frame_idx_set(storage: Storage, config):
 
 
 def display_frame(storage: Storage, config):
+    """
+    在界面上显示当前标注帧。
+    // 不要频繁调用此函数，此函数会重绘页面，较影响性能
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    """
     if len(storage.frame_list) > 0:
         frame = storage.frame_list[storage.frame_idx] if storage.frame_labeled_list.get(storage.frame_idx) is None else storage.frame_labeled_list[storage.frame_idx]
         frame = cv2.resize(frame, config.frame_size)
@@ -266,6 +377,12 @@ def display_frame(storage: Storage, config):
 
 
 def get_clip_features(storage: Storage, config):
+    """
+    计算当前视频所有帧的CLIP特征向量，并调用选取训练集函数。
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    """
     if storage.clip is None:
         append_output_text(storage, "加载CLIP模型...")
         from src.models.clip import CLIP
@@ -294,6 +411,14 @@ def get_clip_features(storage: Storage, config):
     get_train_set(storage, config, threshold=threshold)
 
 def get_train_set(storage: Storage, config, threshold):
+    """
+    根据相似度阈值选取训练集。
+    // 选取规则：从第一帧开始，依次计算与已选取帧的相似度，若最大相似度小于阈值则加入训练集
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    :param threshold: 相似度阈值
+    """
     ilist = []
     ilist.append(0)
     for i in range(1, len(storage.frame_emb_list)):
@@ -313,23 +438,47 @@ def get_train_set(storage: Storage, config, threshold):
 
 
 def start_sample_label(storage: Storage, config):
+    """
+    开始样本标注模式
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    """
     storage.status = "training"
     storage.train_idx = 0
     train_idx_set(storage, config)
 
 def train_idx_dec(storage: Storage, config):
+    """
+    标注上一个训练集帧
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    """
     storage.train_idx -= 1
     if storage.train_idx < 0:
         storage.train_idx = 0
     train_idx_set(storage, config)
 
 def train_idx_inc(storage: Storage, config):
+    """
+    标注下一个训练集帧
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    """
     storage.train_idx += 1
     if storage.train_idx >= len(storage.train_idx_list):
         storage.train_idx = len(storage.train_idx_list) - 1
     train_idx_set(storage, config)
 
 def train_idx_set(storage: Storage, config):
+    """
+    设置当前标注的训练集帧索引，并对当前帧加载基于COCO数据集的预训练模型的检测结果
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    """
     save_result(storage, config, storage.frame_idx)
     idx = storage.train_idx_list[storage.train_idx]
     storage.frame_idx = idx
@@ -342,6 +491,14 @@ def train_idx_set(storage: Storage, config):
 
 
 def plot_labeled_frame(storage: Storage, config, relabel=False):
+    """
+    在当前帧上绘制检测框和标签，返回绘制后的图像
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    :param relabel: 是否重新计算检测结果，默认为False
+    """
+    # 计算结果，或从缓存记录中加载结果
     frame = storage.frame_list[storage.frame_idx].copy()
     result_buff: Results | None = storage.frame_res_list.get(storage.frame_idx, None)
     if result_buff is None or relabel:
@@ -365,6 +522,7 @@ def plot_labeled_frame(storage: Storage, config, relabel=False):
     else:
         result = result_buff
 
+    # 使用ultralytics API绘制结果，并高亮当前训练框
     result.names = {i: name for i, name in enumerate(storage.classes)}
     storage.frame_res_list[storage.frame_idx] = result
     if result.boxes is None:
@@ -401,11 +559,25 @@ def plot_labeled_frame(storage: Storage, config, relabel=False):
     return frame
 
 def label_frame(storage: Storage, config, relabel=False):
+    """
+    对当前帧执行标注并显示
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    :param relabel: 是否重新计算检测结果，默认为False
+    """
     annotated_frame = plot_labeled_frame(storage, config, relabel=relabel)
     storage.frame_labeled_list[storage.frame_idx] = annotated_frame
     display_frame(storage, config)
 
 def label_box_idx_inc(storage: Storage, config, event):
+    """
+    切换到下一个检测框
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    :param event: wxPython的按键事件对象
+    """
     if event.GetKeyCode() != ord('B'):
         return False
     result = storage.frame_res_list.get(storage.frame_idx, None)
@@ -419,6 +591,13 @@ def label_box_idx_inc(storage: Storage, config, event):
     return True
 
 def label_box_move(storage: Storage, config, event):
+    """
+    移动当前选中的检测框
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    :param event: wxPython的按键事件对象
+    """
     direction = (0, 0)
     if event.GetKeyCode() == wx.WXK_UP:
         direction = (0, -1)
@@ -450,7 +629,15 @@ def label_box_move(storage: Storage, config, event):
     storage.frame_res_list[storage.frame_idx] = result
     label_frame(storage, config)
     return True
+
 def label_box_resize(storage: Storage, config, event):
+    """
+    调整当前选中的检测框大小
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    :param event: wxPython的按键事件对象
+    """
     direction = (0, 0)
     if event.GetKeyCode() == ord('W'):
         direction = (0, -1)
@@ -482,6 +669,13 @@ def label_box_resize(storage: Storage, config, event):
     return True
 
 def label_box_speed_up(storage: Storage, config, event):
+    """
+    在持续按键过程中，提高检测框移动和调整的速度
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    :param event: wxPython的按键事件对象
+    """
     if event.GetKeyCode() in [
         ord('W'),
         ord('A'),
@@ -498,6 +692,13 @@ def label_box_speed_up(storage: Storage, config, event):
     return False
 
 def label_box_speed_reset(storage: Storage, config, event):
+    """
+    重置检测框移动和调整的速度
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    :param event: wxPython的按键事件对象
+    """
     if storage.last_speed_up_time + 0.1 < time.time() and event.GetKeyCode() in [
         ord('W'),
         ord('A'),
@@ -513,6 +714,13 @@ def label_box_speed_reset(storage: Storage, config, event):
     return False
 
 def label_box_create(storage: Storage, config, event):
+    """
+    创建一个新的检测框
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    :param event: wxPython的按键事件对象
+    """
     if event.GetKeyCode() != ord('C'):
         return False
     result = storage.frame_res_list.get(storage.frame_idx, None)
@@ -536,6 +744,13 @@ def label_box_create(storage: Storage, config, event):
     return True
 
 def label_box_delete(storage: Storage, config, event):
+    """
+    删除当前选中的检测框
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    :param event: wxPython的按键事件对象
+    """
     if event.GetKeyCode() != wx.WXK_DELETE:
         return False
     result = storage.frame_res_list.get(storage.frame_idx, None)
@@ -555,6 +770,13 @@ def label_box_delete(storage: Storage, config, event):
     return True
 
 def label_box_class_next(storage: Storage, config, event):
+    """
+    切换当前选中检测框的类别到下一个类别
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    :param event: wxPython的按键事件对象
+    """
     if event.GetKeyCode() != ord('T'):
         return False
     result = storage.frame_res_list.get(storage.frame_idx, None)
@@ -576,6 +798,14 @@ def label_box_class_next(storage: Storage, config, event):
     return True
 
 def save_result(storage: Storage, config, idx):
+    """
+    保存当前帧的标注结果到临时文件夹
+    // 会覆盖原有结果文件
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    :param event: wxPython的按键事件对象
+    """
     p = f"data/detect/temp/{os.path.basename(storage.video_list[storage.video_idx]).replace('.mp4', '')}_frame_{idx:05d}.npy"
     os.makedirs(os.path.dirname(p), exist_ok=True)
     result = storage.frame_res_list.get(idx, None)
@@ -588,6 +818,15 @@ def save_result(storage: Storage, config, idx):
     np.save(p, np_data)
 
 def load_result(storage: Storage, config, event):
+
+    """
+    从临时文件夹加载当前帧的标注结果
+    // 若无结果文件则跳过
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    :param event: wxPython的按键事件对象
+    """
     if event is not None:
         if event.GetKeyCode() != ord('L'):
             return False
@@ -607,6 +846,12 @@ def load_result(storage: Storage, config, event):
     return True
 
 def sample_train(storage: Storage, config):
+    """
+    使用标注好的小样本训练集帧训练YOLO模型
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    """
     storage.window.label_config.sample_label_progress.SetLabel(f"{len(storage.train_idx_list)}/{len(storage.train_idx_list)}")
     storage.window.label_config.sample_label_button.set_status("[OK]")
     append_output_text(storage, "创建训练集目录，路径：temp/dataset")
@@ -660,6 +905,13 @@ def sample_train(storage: Storage, config):
     append_output_text(storage, "训练完成")
 
 def append_train(storage: Storage, config):
+    """
+    使用当前帧增量训练YOLO模型
+    // 还未实现，有问题
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    """
     p = "temp/dataset"
     if os.path.exists(p):
         shutil.rmtree(p)
@@ -708,6 +960,12 @@ def append_train(storage: Storage, config):
 
 
 def start_auto_detect(storage: Storage, config):
+    """
+    开始自动标注模式
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    """
     storage.status = "labeling"
     storage.frame_idx = 0
     storage.window.load_video_opts.fid_input.SetValue(str(storage.frame_idx))
@@ -715,6 +973,12 @@ def start_auto_detect(storage: Storage, config):
     frame_idx_set(storage, config)
 
 def auto_label(storage: Storage, config, event):
+    """
+    切换自动标注的启停状态
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    """
     if event.GetKeyCode() != ord('N'):
         return False
     if not storage.auto_labeling:
@@ -726,12 +990,26 @@ def auto_label(storage: Storage, config, event):
     return True
 
 def relabel_frame(storage: Storage, config, event):
+    """
+    重新使用模型自动标注当前帧
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    :param event: wxPython的按键事件对象
+    """
     if event.GetKeyCode() != ord('R') or storage.status != "labeling":
         return False
     label_frame(storage, config, relabel=True)
     return True
 
 def load_last_frame_labels(storage: Storage, config, event):
+    """
+    复制上一帧的标注到当前帧
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    :param event: wxPython的按键事件对象
+    """
     if event.GetKeyCode() != ord('P'):
         return False
     result: Results | None = None
@@ -760,6 +1038,12 @@ def load_last_frame_labels(storage: Storage, config, event):
     return True
 
 def save_results(storage: Storage, config):
+    """
+    保存当前选中视频的所有标注结果到data/detect目录下，包括JSON标签文件和标注预览视频文件。
+    
+    :param storage: 传入interface.py的Storage实例
+    :param config: 传入interface.py的Config实例
+    """
     name = os.path.basename(storage.video_list[storage.video_idx].replace(".mp4", ""))
     os.makedirs("data/detect/labels", exist_ok=True)
     os.makedirs("data/detect/videos", exist_ok=True)

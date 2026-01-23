@@ -3,6 +3,14 @@ from wx.lib.buttons import GenButton
 from wx.richtext import RichTextCtrl
 
 
+#
+# =========---  Display Library   ---========= #
+# 1. 统一的显示组件库，封装了主窗口、面板、进度条等组件
+# 2. 统一使用深色背景和浅色前景
+# 3. 除窗口外其他组件统一使用GridBagSizer布局
+#
+
+
 def reformat(comp):
     if isinstance(comp, wx.StaticText):
         comp.SetForegroundColour(wx.Colour(220, 220, 220))
@@ -21,6 +29,11 @@ def reformat(comp):
 
 
 class MainFrame(wx.Frame):
+    """
+    封装的主程序窗口类，提供统一的背景颜色和布局管理
+    - 调用add方法向本组件中添加子组件
+    - 所有组件添加后调用set_sizer方法应用布局
+    """
     def __init__(self, title, size):
         super().__init__(None, wx.ID_ANY, title, size=size)
         self.SetBackgroundColour(wx.Colour(30, 30, 30))
@@ -44,6 +57,10 @@ class MainFrame(wx.Frame):
 
 
 class Panel(wx.Panel):
+    """
+    封装的面板类，提供统一的背景颜色和布局管理
+    // 调用add方法向本组件中添加子组件
+    """
     def __init__(self, parent, vgap=10, hgap=10):
         super().__init__(parent)
         self.SetBackgroundColour(wx.Colour(30, 30, 30))
@@ -68,6 +85,12 @@ class Panel(wx.Panel):
 
 
 class ProgressBar(Panel):
+    """
+    自定义进度条组件，进度值范围为0-1000，表示0%到100%
+    - 通过SetValue方法设置进度值（0-1000）
+    - 通过SetColor方法设置前景色和背景色
+    - 通过GetValue方法获取当前进度值
+    """
     def __init__(self, parent):
         super().__init__(parent)
         self.value = 0
@@ -102,6 +125,11 @@ class ProgressBar(Panel):
 
 
 class ButtonWithStatus():
+    """
+    带状态指示的按钮组件，包含一个按钮和一个状态文本
+    // 需要占1x2的网格空间
+    - 通过set_status方法设置状态文本和颜色
+    """
     def __init__(self, parent, label, status="[WT]"):
         self.parent = parent
         self.button = GenButton(parent, label=label)

@@ -7,6 +7,9 @@ from pathlib import Path
 
 
 class YOLOImpl():
+    """
+    二次封装YOLO模型的类，提供训练、预测和跟踪功能。
+    """
 
     def __init__(self, weights_path: str):
         torch.backends.cudnn.benchmark = True
