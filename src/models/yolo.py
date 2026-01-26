@@ -3,6 +3,7 @@ import numpy as np
 import os
 import yaml
 from ultralytics import YOLO  # type: ignore
+from ultralytics.engine.results import Boxes, Results
 from pathlib import Path
 
 
@@ -28,8 +29,8 @@ class YOLOImpl():
         data,
         epochs,
         batch=8,
-        optimizer="Adam",
-        lr=3e-4,
+        optimizer="AdamW",
+        lr0=3e-4,
         pretrained=None,
         default_pretrained="./models/yolo11n.pt"
     ):
@@ -37,7 +38,7 @@ class YOLOImpl():
             self.model.save(Path("./temp/detect/train_yolo/weights/best.pt").absolute())
             pretrained = "./temp/detect/train_yolo/weights/best.pt"
         elif pretrained is None:
-            pretrained = "./models/yolo11n.pt"
+            pretrained = default_pretrained
 
         self.model.train(
             augment=True,
@@ -53,7 +54,7 @@ class YOLOImpl():
             freeze=10,
             hsv_s=0.5,
             hsv_v=0.3,
-            lr0=lr,
+            lr0=lr0,
             mixup=0.2,
             name="train_yolo",
             optimizer=optimizer,
@@ -74,91 +75,33 @@ class YOLOImpl():
         results = self.model(
             img,
             imgsz=640,
-            conf=0.18,
-            iou=0.5,
+            conf=0.20,
+            iou=0.6,
             half=True,
             device="0"
         )
         return results
     
 
-    def track(self, img, detects):
-        predictor = self.model.predictor
-        if predictor is not None:
-            trackers = getattr(predictor, "trackers", None)
-            if isinstance(trackers, list) and len(trackers) > 0:
-                tracker = trackers[0]
-                tracker.reset()
-
-                class _DetObj:
-                    def __init__(self, arr=None, xyxy=None, xywh=None, conf=None, cls=None):
-                        def _xyxy_to_xywh(xyxy):
-                            a = np.asarray(xyxy, dtype=np.float32)
-                            if a.size == 0:
-                                return np.empty((0, 4), dtype=np.float32)
-                            if a.ndim == 1:
-                                a = a.reshape(1, 4)
-                            x1, y1, x2, y2 = a.T
-                            w = x2 - x1
-                            h = y2 - y1
-                            cx = x1 + w / 2.0
-                            cy = y1 + h / 2.0
-                            return np.stack([cx, cy, w, h], axis=1).astype(np.float32)
-
-                        if arr is not None:
-                            a = np.asarray(arr, dtype=np.float32)
-                            if a.ndim == 1 and a.size > 0:
-                                a = a.reshape(1, -1)
-                            if a.size == 0:
-                                self.xyxy = np.empty((0, 4), dtype=np.float32)
-                                self.conf = np.empty((0,), dtype=np.float32)
-                                self.cls = np.empty((0,), dtype=np.int32)
-                                self.xywh = np.empty((0, 4), dtype=np.float32)
-                                self.xywhr = self.xywh
-                            else:
-                                self.xyxy = a[:, :4].astype(np.float32)
-                                self.conf = a[:, 4].astype(np.float32) if a.shape[1] > 4 else np.zeros((a.shape[0],), dtype=np.float32)
-                                self.cls = a[:, 5].astype(np.int32) if a.shape[1] > 5 else np.zeros((a.shape[0],), dtype=np.int32)
-                                self.xywh = _xyxy_to_xywh(self.xyxy)
-                                self.xywhr = self.xywh
-                        else:
-                            self.xyxy = np.asarray(xyxy, dtype=np.float32)
-                            if self.xyxy.ndim == 1:
-                                self.xyxy = self.xyxy.reshape(1, 4)
-                            self.conf = np.asarray(conf, dtype=np.float32)
-                            if self.conf.ndim == 0:
-                                self.conf = self.conf.reshape(1,)
-                            self.cls = np.asarray(cls, dtype=np.int32)
-                            if self.cls.ndim == 0:
-                                self.cls = self.cls.reshape(1,)
-                            self.xywh = _xyxy_to_xywh(self.xyxy)
-                            self.xywhr = self.xywh
-
-                    def __len__(self):
-                        return int(self.xyxy.shape[0])
-
-                    def __getitem__(self, idx):
-                        return _DetObj(xyxy=self.xyxy[idx], conf=self.conf[idx], cls=self.cls[idx])
-
-                for e in detects:
-                    det_obj = _DetObj(arr=e)
-                    tracker.update(det_obj, None, None)
-
+    def track(self, img):
         config = {
-            "tracker_type": "bytetrack",
-            "track_high_thresh": 0.25,
+            "tracker_type": "botsort",
+            "track_high_thresh": 0.4,
             "track_low_thresh": 0.1,
             "new_track_thresh": 0.25,
             "track_buffer": 10,
-            "match_thresh": 0.65,
+            "match_thresh": 0.6,
             "fuse_score": True,
+            "gmc_method": "sparseOptFlow",
+            "proximity_thresh": 0.5,
+            "appearance_thresh": 0.8,
+            "with_reid": False,
+            "model": "auto"
         }
         os.makedirs("./temp/track", exist_ok=True)
         yaml.dump(config, open("./temp/track/bytetrack.yaml", "w", encoding="utf-8"), indent=4)
         results = self.model.track(
             img,
-            conf=0.18,
-            iou=0.5,
             rect=True,
             half=True,
             persist=False,
@@ -166,4 +109,32 @@ class YOLOImpl():
             device="0",
             augment=True,
         )
+
+        for e in results:  # 去除未分配追踪ID的目标框
+            if e.boxes is None:
+                continue
+            data = e.boxes.data
+            data = data if isinstance(data, torch.Tensor) else torch.tensor(data)
+            if data is None:
+                empty = torch.zeros((0, 7), dtype=torch.float32)
+                e.boxes = Boxes(empty, e.boxes.orig_shape)
+                continue
+            if data.numel() == 0:
+                empty = torch.zeros((0, 7), dtype=data.dtype, device=data.device)
+                e.boxes = Boxes(empty, e.boxes.orig_shape)
+                continue
+            if data.shape[1] == 6:
+                empty = torch.zeros((0, 7), dtype=data.dtype, device=data.device)
+                e.boxes = Boxes(empty, e.boxes.orig_shape)
+                continue
+            if data.shape[1] == 7:
+                ids = data[:, 4]
+                mask = torch.isfinite(ids) & (ids > 0)
+                data = data[mask]
+                if data.numel() == 0:
+                    empty = torch.zeros((0, 7), dtype=ids.dtype, device=ids.device)
+                    e.boxes = Boxes(empty, e.boxes.orig_shape)
+                else:
+                    e.boxes = Boxes(data, e.boxes.orig_shape)
+
         return results

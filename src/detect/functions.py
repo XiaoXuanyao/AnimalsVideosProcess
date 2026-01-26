@@ -140,6 +140,74 @@ def average(arr: list[Results], weights: list[float] | None=None) -> Boxes:
     return boxes
 
 
+def iou_xyxy(box1, box2):
+    """
+    计算两个xyxy格式的边界框的IoU值。
+
+    :param box1: 第一个边界框，格式为[x1, y1, x2, y2]，可以是numpy数组或列表
+    :param box2: 第二个边界框，格式为[x1, y1, x2, y2]，可以是numpy数组或列表
+    """
+    box1 = np.asarray(box1)
+    box2 = np.asarray(box2)
+
+    x1 = np.maximum(box1[..., 0], box2[..., 0])
+    y1 = np.maximum(box1[..., 1], box2[..., 1])
+    x2 = np.minimum(box1[..., 2], box2[..., 2])
+    y2 = np.minimum(box1[..., 3], box2[..., 3])
+
+    inter_w = np.maximum(0.0, x2 - x1)
+    inter_h = np.maximum(0.0, y2 - y1)
+    inter = inter_w * inter_h
+
+    area1 = np.maximum(0.0, box1[..., 2] - box1[..., 0]) * np.maximum(0.0, box1[..., 3] - box1[..., 1])
+    area2 = np.maximum(0.0, box2[..., 2] - box2[..., 0]) * np.maximum(0.0, box2[..., 3] - box2[..., 1])
+
+    union = area1 + area2 - inter
+    return inter / (union + 1e-6)
+
+
+def look_forward(arr: list[Results], now: Results) -> Boxes | None:
+    """
+    根据历史记录，返回下一帧的预测值。
+    
+    :param arr: 传入历史的Results对象列表
+    :param now: 当前帧的Results对象
+    """
+    if now.boxes is None or now.boxes.data.shape[0] == 0:
+        now.boxes = arr[-1].boxes
+    if now.boxes is None:
+        return None
+    data = []
+    for e in arr:
+        if e.boxes is None or len(e.boxes.data) != len(now.boxes.data):
+            return now.boxes
+        d0 = e.boxes.data
+        d0 = d0 if isinstance(d0, torch.Tensor) else torch.tensor(d0)
+        d0 = d0.clone()
+        order = torch.argsort(d0[:, 4])
+        d0 = d0[order]
+        data.append(d0.cpu().numpy())
+    dx = []
+    for i in range(len(data) - 1):
+        dx.append(data[i + 1] - data[i])
+    v = np.mean(np.array(dx), axis=0)
+
+    dest_data = now.boxes.data
+    dest_data = dest_data if isinstance(dest_data, torch.Tensor) else torch.tensor(dest_data)
+    dest_data = dest_data.clone().cpu().numpy()
+    pred_data = data[-1] + v
+    
+    iou = []
+    for i in range(len(dest_data)):
+        iou.append(iou_xyxy(dest_data[i][:4], pred_data[i][:4]))
+    iou = np.mean(np.array(iou))
+
+    rate = iou * 0.4 + 0.8 * 0.6
+    data = pred_data * rate + dest_data * (1 - rate)
+    boxes = Boxes(torch.tensor(data, dtype=torch.float32), now.boxes.orig_shape)
+    return boxes
+
+
 def calculate_image_results(model: YOLOImpl, frame, before_results: list[Results] | None=None) -> Results:
     """
     计算单张图像的检测框，支持传入前几帧的检测结果以进行跟踪，返回检测结果。
@@ -171,12 +239,9 @@ def calculate_image_results(model: YOLOImpl, frame, before_results: list[Results
             conf = conf.reshape(-1, 1)
             cls = cls.reshape(-1, 1)
             detects.append(np.concatenate([xyxy, conf, cls], axis=1).astype(np.float32))
-        result: Results = model.track(
-            img=frame,
-            detects=detects
-        )[0]
+        result: Results = model.track(frame)[0]
     else:
-        result: Results = model.predict(frame)[0]
+        result: Results = model.track(frame)[0]
     return result
 
 
@@ -238,8 +303,7 @@ def video_idx_inc(storage: Storage, config):
     """
     component = storage.window.load_video_opts
     if storage.video_idx < len(storage.video_list) - 1:
-        storage.video_idx += 1
-        component.vid_input.SetValue(str(storage.video_idx))
+        component.vid_input.SetValue(str(storage.video_idx + 1))
         video_idx_set(storage, config)
 
 
@@ -252,8 +316,7 @@ def video_idx_dec(storage: Storage, config):
     """
     component = storage.window.load_video_opts
     if storage.video_idx > 0:
-        storage.video_idx -= 1
-        component.vid_input.SetValue(str(storage.video_idx))
+        component.vid_input.SetValue(str(storage.video_idx - 1))
         video_idx_set(storage, config)
 
 
@@ -404,11 +467,11 @@ def get_clip_features(storage: Storage, config):
         append_output_text(storage, "CLIP模型加载完成")
     if storage.yolo is None:
         append_output_text(storage, "加载YOLO模型...")
-        if os.path.exists("temp/detect/train_yolo/weights/best.pt"):
-            storage.yolo = YOLOImpl(weights_path="temp/detect/train_yolo/weights/best.pt")
+        if os.path.exists("./temp/detect/train_yolo/weights/best.pt"):
+            storage.yolo = YOLOImpl(weights_path="./temp/detect/train_yolo/weights/best.pt")
             append_output_text(storage, "已加载自定义训练的YOLO模型")
         else:
-            storage.yolo = YOLOImpl(weights_path="models/" + config.model_name)
+            storage.yolo = YOLOImpl(weights_path="./models/" + config.model_name)
             append_output_text(storage, "YOLO模型加载完成")
     storage.window.outputs.progress.SetColor(wx.Colour(50, 150, 150), wx.Colour(50, 90, 90))
     storage.window.outputs.progress.SetValue(0)
@@ -436,14 +499,23 @@ def get_train_set(storage: Storage, config, threshold):
     """
     ilist = []
     ilist.append(0)
-    for i in range(1, len(storage.frame_emb_list)):
+    while True:
         sims = []
-        for j in ilist:
-            sim = storage.frame_emb_list[i] @ storage.frame_emb_list[j].T
-            sims.append(sim)
-        max_sim = max(sims)
-        if max_sim < threshold:
-            ilist.append(i)
+        for i in range(len(storage.frame_list)):
+            v = 0
+            for j in ilist:
+                sim = storage.frame_emb_list[i] @ storage.frame_emb_list[j].T
+                v = max(v, sim)
+            sims.append(v)
+        mini = sims.index(min(sims))
+        if sims[mini] >= threshold:
+            break
+        delta = 20
+        if mini not in ilist:
+            ilist.append(mini)
+        if mini + delta < len(storage.frame_list) and mini + delta not in ilist:
+            ilist.append(mini + delta)
+    ilist.sort()
     storage.train_idx_list = ilist
     storage.window.label_config.sim_th_calculate.set_status("[OK]")
     storage.window.label_config.sample_label_progress.SetLabel(f"0/{len(ilist)}")
@@ -527,18 +599,13 @@ def plot_labeled_frame(storage: Storage, config, relabel=False):
         ] if e is not None])
         result = postprocess_image_results(result, storage.classes)
 
-        if  storage.frame_idx - 1 >= 0 and storage.frame_idx + 1 < len(storage.frame_list):
-            a_results = []
-            for i in range(-1, 2):
-                frame_i = storage.frame_idx + i
-                res_i = storage.frame_res_list.get(frame_i, None)
-                if res_i is None:
-                    res_i = calculate_image_results(storage.yolo, storage.frame_list[frame_i], before_results=[e for e in [
-                        storage.frame_res_list.get(frame_i - j - 1, None) for j in range(0, 10)
-                    ] if e is not None])
-                    res_i = postprocess_image_results(res_i, storage.classes)
-            boxes = average([result] + a_results, weights=[0.3, 0.4, 0.3])
-            result.boxes = boxes
+        if  storage.frame_idx - 3 >= 0:
+            p_list = []
+            for i in range(-3, 0):
+                p_list.append(storage.frame_res_list.get(storage.frame_idx + i, None))
+            if all(e is not None for e in p_list):
+                boxes = look_forward(p_list, result)
+                result.boxes = boxes
     else:
         result = result_buff
 
@@ -760,7 +827,8 @@ def label_box_create(storage: Storage, config, event):
     if data.shape[1] == 6:
         new_box = torch.tensor([[w//4, h//4, w//2, h//2, 0.95, 0]], dtype=data.dtype)
     else:
-        new_box = torch.tensor([[w//4, h//4, w//2, h//2, max(data[:, -3]) + 1, 0.95, 0]], dtype=data.dtype)
+        idx = max(data[:, -3]) + 1 if data.shape[0] > 0 else 1
+        new_box = torch.tensor([[w//4, h//4, w//2, h//2, idx, 0.95, 0]], dtype=data.dtype)
     data = torch.cat([data, new_box.to(data.device)], dim=0)
     boxes = Boxes(data, result.boxes.orig_shape)
     result.boxes = boxes
@@ -870,6 +938,9 @@ def load_result(storage: Storage, config, event):
         return True
     np_data = np.load(p)
     data = torch.tensor(np_data, dtype=torch.float32)
+    if data.shape[0] > 0 and data.shape[1] == 6:
+        ids = torch.zeros((data.shape[0], 1), dtype=data.dtype)
+        data = torch.cat([data[:, :4], ids, data[:, 4:6]], dim=1)
     boxes = Boxes(data, result.boxes.orig_shape)
     result.boxes = boxes
     storage.frame_res_list[idx] = result
@@ -929,8 +1000,8 @@ def sample_train(storage: Storage, config):
                 f.write(f"{cls} {x_center:.4f} {y_center:.4f} {box_w:.4f} {box_h:.4f}\n")
     
     append_output_text(storage, "训练模型...")
-    model = YOLOImpl(weights_path=f"models/{config.model_name}")
-    model.train(data=f"{p}/data.yaml", epochs=120, batch=32, optimizer="auto", lr=3e-4, default_pretrained=f"models/{config.model_name}")
+    model = YOLOImpl(weights_path=f"./models/{config.model_name}")
+    model.train(data=f"{p}/data.yaml", epochs=120, batch=32, optimizer="auto", lr0=3e-4, default_pretrained=f"./models/{config.model_name}")
     
     storage.yolo = model
     storage.window.label_config.train_button.set_status("[OK]")
@@ -985,8 +1056,8 @@ def append_train(storage: Storage, config):
                 cls = int(box[-1])
                 f.write(f"{cls} {x_center:.4f} {y_center:.4f} {box_w:.4f} {box_h:.4f}\n")
     
-    model = YOLOImpl(weights_path=f"models/{config.model_name}")
-    model.train(data=f"{p}/data.yaml", epochs=3, batch=4, optimizer="Adam", lr=1e-4, pretrained="self", default_pretrained=f"models/{config.model_name}")
+    model = YOLOImpl(weights_path=f"./models/{config.model_name}")
+    model.train(data=f"{p}/data.yaml", epochs=3, batch=4, optimizer="AdamW", lr0=3e-5, pretrained="self", default_pretrained=f"./models/{config.model_name}")
     
     storage.yolo = model
     append_output_text(storage, "单帧增量训练完成")
@@ -1105,7 +1176,7 @@ def save_results(storage: Storage, config):
     vwr = cv2.VideoWriter(
         f"data/detect/videos/{name}.mp4",
         cv2.VideoWriter_fourcc(*'mp4v'),  # type: ignore
-        30,
+        30 / config.frames_per_label,
         config.frame_size
     )
     for i in range(0, len(storage.frame_list)):

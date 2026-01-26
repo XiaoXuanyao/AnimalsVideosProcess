@@ -59,19 +59,19 @@ class CLIP:
             use_fast=True
         )
             
-        if use_tensorrt and os.path.exists(Path(LOCAL_MODEL_DIR).parent / "clip_trt.pt2"):
-            self.vision_trtmodel = torch_tensorrt.load(
-                str(Path(LOCAL_MODEL_DIR).parent / "clip_trt.pt2")
-            ).module().to(self.device)
-            print("Using pre-built TensorRT optimized CLIP vision model.")
-            return
-            
         self.model = CLIPModel.from_pretrained(
             LOCAL_MODEL_DIR,
             local_files_only=True
         )
         self.model.to(self.device)  # type: ignore
         self.model.eval()
+            
+        if use_tensorrt and os.path.exists(Path(LOCAL_MODEL_DIR).parent / "clip_trt.pt2"):
+            self.vision_trtmodel = torch_tensorrt.load(
+                str(Path(LOCAL_MODEL_DIR).parent / "clip_trt.pt2")
+            ).module().to(self.device)
+            print("Using pre-built TensorRT optimized CLIP vision model.")
+            return
             
         self.vision_trtmodel = CLIPVisionWrapper(self.model).to(self.device).eval()
         if use_tensorrt:
