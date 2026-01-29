@@ -177,6 +177,12 @@ def look_forward(arr: list[Results], now: Results) -> Boxes | None:
         now.boxes = arr[-1].boxes
     if now.boxes is None:
         return None
+    d0 = now.boxes.data
+    d0 = d0 if isinstance(d0, torch.Tensor) else torch.tensor(d0)
+    d0 = d0.clone()
+    order = torch.argsort(d0[:, 4])
+    now.boxes = Boxes(d0[order], now.boxes.orig_shape)
+
     data = []
     for e in arr:
         if e.boxes is None or len(e.boxes.data) != len(now.boxes.data):

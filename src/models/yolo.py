@@ -86,7 +86,7 @@ class YOLOImpl():
     def track(self, img):
         config = {
             "tracker_type": "botsort",
-            "track_high_thresh": 0.4,
+            "track_high_thresh": 0.25,
             "track_low_thresh": 0.1,
             "new_track_thresh": 0.25,
             "track_buffer": 10,
@@ -95,19 +95,17 @@ class YOLOImpl():
             "gmc_method": "sparseOptFlow",
             "proximity_thresh": 0.5,
             "appearance_thresh": 0.8,
-            "with_reid": False,
+            "with_reid": True,
             "model": "auto"
         }
         os.makedirs("./temp/track", exist_ok=True)
-        yaml.dump(config, open("./temp/track/bytetrack.yaml", "w", encoding="utf-8"), indent=4)
+        yaml.dump(config, open("./temp/track/track.yaml", "w", encoding="utf-8"), indent=4)
         results = self.model.track(
             img,
             rect=True,
-            half=True,
-            persist=False,
-            tracker=Path("./temp/track/bytetrack.yaml").absolute(),
+            persist=True,
+            tracker=Path("./temp/track/track.yaml").absolute(),
             device="0",
-            augment=True,
         )
 
         for e in results:  # 去除未分配追踪ID的目标框
